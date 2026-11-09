@@ -126,10 +126,10 @@ public class ConfigPostureScanner implements Scanner {
         plainTextSecrets(ctx);
         // SecureTest's own exposure (SRS 9.1)
         SecureTestProperties.Dashboard d = props.getDashboard();
-        boolean loopback = d.getBindAddress() == null || d.getBindAddress().startsWith("127.") || d.getBindAddress().equals("::1") || d.getBindAddress().equals("localhost");
-        if (!loopback && (!d.getAuthentication().isEnabled() || "local-dev".equals(d.getAuthentication().getProvider()))) {
-            report(ctx, "CFG-SECURETEST-EXPOSED", "SecureTest dashboard is network-exposed without real authentication", Severity.HIGH,
-                    "The dashboard is an administration surface.", "Use basic or container authentication with TLS, or keep bind-address=127.0.0.1.",
+        if (!d.getAuthentication().isEnabled()) {
+            report(ctx, "CFG-SECURETEST-EXPOSED", "SecureTest dashboard authentication is disabled", Severity.MEDIUM,
+                    "The dashboard is an administration surface. With authentication disabled only same-machine requests are served, but any local process can use it.",
+                    "Remove securetest.dashboard.authentication.enabled=false (the default 'auto' sign-in needs no configuration).",
                     "securetest.dashboard.bind-address=" + d.getBindAddress(), "OWASP-A01", "OWASP-A07");
         }
         if (!props.getSecurity().isEnforceTargetAllowlist()) {

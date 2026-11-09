@@ -75,8 +75,8 @@ public class FindingApiController {
                                                @RequestParam(required = false) String sort,
                                                @RequestParam(defaultValue = "false") boolean includeClosed,
                                                @RequestParam(defaultValue = "0") int page,
-                                               @RequestParam(defaultValue = "50") int size) {
-        Authz.require(Permission.VIEW);
+                                               @RequestParam(defaultValue = "50") int size, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Set<Severity> pr = csv(priority).stream().map(Severity::valueOf).collect(Collectors.toSet());
         Set<FindingStatus> st = csv(status).stream().map(FindingStatus::valueOf).collect(Collectors.toSet());
         return findings.search(new FindingService.Filter(q, pr, st, csv(module), source, sort, includeClosed),
@@ -89,24 +89,24 @@ public class FindingApiController {
     }
 
     @GetMapping("/findings/summary")
-    public Map<String, Object> summary() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> summary(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return findings.summary();
     }
 
     @GetMapping("/findings/{findingId}")
-    public Finding get(@PathVariable String findingId) {
-        Authz.require(Permission.VIEW);
+    public Finding get(@PathVariable String findingId, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return findings.get(findingId);
     }
 
     public record FindingUpdate(FindingStatus status, String owner, Instant dueDate, String note) { }
 
     @PatchMapping("/findings/{findingId}")
-    public Finding update(@PathVariable String findingId, @RequestBody FindingUpdate body) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public Finding update(@PathVariable String findingId, @RequestBody FindingUpdate body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         Finding f = findings.update(findingId, body.status(), body.owner(), body.dueDate(), body.note(), p.name());
-        audit.record(p.name(), p.remoteAddress(), "finding.updated", findingId, "OK",
+        audit.record(p, "finding.updated", findingId, "OK",
                 Map.of("status", String.valueOf(body.status()), "owner", String.valueOf(body.owner())));
         return f;
     }
@@ -114,8 +114,8 @@ public class FindingApiController {
     public record SuppressionRequest(FindingStatus type, String reason, String owner, Instant expiresAt) { }
 
     @PostMapping("/findings/{findingId}/suppressions")
-    public Finding suppress(@PathVariable String findingId, @RequestBody SuppressionRequest req) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public Finding suppress(@PathVariable String findingId, @RequestBody SuppressionRequest req, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         Finding f = findings.get(findingId);
         Severity eff = f.priority == null ? f.sourceSeverity : f.priority;
         String approver = null;
@@ -125,16 +125,16 @@ public class FindingApiController {
         }
         Finding out = findings.suppress(findingId, req.type() == null ? FindingStatus.SUPPRESSED : req.type(), req.reason(), req.owner(),
                 req.expiresAt(), p.name(), approver);
-        audit.record(p.name(), p.remoteAddress(), "finding.exception.created", findingId, "OK",
+        audit.record(p, "finding.exception.created", findingId, "OK",
                 Map.of("type", String.valueOf(req.type()), "owner", String.valueOf(req.owner()), "expires", String.valueOf(req.expiresAt())));
         return out;
     }
 
     @DeleteMapping("/findings/{findingId}/suppressions")
-    public Finding revoke(@PathVariable String findingId) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public Finding revoke(@PathVariable String findingId, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         Finding f = findings.revokeSuppression(findingId, p.name());
-        audit.record(p.name(), p.remoteAddress(), "finding.exception.revoked", findingId, "OK", Map.of());
+        audit.record(p, "finding.exception.revoked", findingId, "OK", Map.of());
         return f;
     }
 
@@ -143,8 +143,8 @@ public class FindingApiController {
      * so a changed file is never presented as the scanned revision.
      */
     @GetMapping("/findings/{findingId}/source")
-    public Map<String, Object> source(@PathVariable String findingId, @RequestParam(defaultValue = "12") int context) {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> source(@PathVariable String findingId, @RequestParam(defaultValue = "12") int context, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Finding f = findings.get(findingId);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("path", f.filePath);
@@ -202,8 +202,8 @@ public class FindingApiController {
     // ------------------------------------------------------------------ remediation
 
     @PostMapping("/remediations/preview")
-    public Map<String, Object> preview(@RequestBody Map<String, String> body) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public Map<String, Object> preview(@RequestBody Map<String, String> body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         String id = body.get("findingId");
         if (id == null) throw ApiException.badRequest("findingId is required");
         return remediation.preview(id, p);
@@ -211,34 +211,34 @@ public class FindingApiController {
 
     /** Opt-in AI-assisted fix proposal (securetest.ai.*). */
     @PostMapping("/remediations/ai-preview")
-    public Map<String, Object> aiPreview(@RequestBody Map<String, String> body) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public Map<String, Object> aiPreview(@RequestBody Map<String, String> body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         String id = body.get("findingId");
         if (id == null) throw ApiException.badRequest("findingId is required");
         return remediation.previewAi(id, p);
     }
 
     @GetMapping("/ai/status")
-    public Map<String, Object> aiStatus() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> aiStatus(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return remediation.aiStatus();
     }
 
     @GetMapping("/remediations")
-    public List<ChangeSet> changeSets(@RequestParam(required = false) String kind) {
-        Authz.require(Permission.VIEW);
+    public List<ChangeSet> changeSets(@RequestParam(required = false) String kind, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return changes.list(kind);
     }
 
     @GetMapping("/remediations/{id}")
-    public ChangeSet changeSet(@PathVariable String id) {
-        Authz.require(Permission.VIEW);
+    public ChangeSet changeSet(@PathVariable String id, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return changes.get(id);
     }
 
     @GetMapping("/remediations/{id}/patch")
-    public ResponseEntity<String> patch(@PathVariable String id) {
-        SecureTestPrincipal p = Authz.require(Permission.VIEW);
+    public ResponseEntity<String> patch(@PathVariable String id, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.VIEW);
         return ResponseEntity.ok().contentType(MediaType.parseMediaType("text/x-diff"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(id + ".patch").build().toString())
                 .body(changes.patch(id, p));
@@ -247,24 +247,24 @@ public class FindingApiController {
     public record ApplyRequest(boolean createBranch, boolean allowDirtyWithSnapshot) { }
 
     @PostMapping("/remediations/{id}/apply")
-    public ChangeSet apply(@PathVariable String id, @RequestBody(required = false) ApplyRequest body) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public ChangeSet apply(@PathVariable String id, @RequestBody(required = false) ApplyRequest body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         ApplyRequest r = body == null ? new ApplyRequest(true, false) : body;
         return changes.apply(id, r.createBranch(), r.allowDirtyWithSnapshot(), p);
     }
 
     @PostMapping("/remediations/{id}/validate")
-    public ChangeSet validate(@PathVariable String id) {
-        return changes.validate(id, Authz.require(Permission.REMEDIATE));
+    public ChangeSet validate(@PathVariable String id, SecureTestPrincipal principal) {
+        return changes.validate(id, Authz.require(principal, Permission.REMEDIATE));
     }
 
     @PostMapping("/remediations/{id}/commit")
-    public ChangeSet commit(@PathVariable String id) {
-        return changes.commit(id, Authz.require(Permission.APPROVE));
+    public ChangeSet commit(@PathVariable String id, SecureTestPrincipal principal) {
+        return changes.commit(id, Authz.require(principal, Permission.APPROVE));
     }
 
     @PostMapping("/remediations/{id}/undo")
-    public ChangeSet undo(@PathVariable String id) {
-        return changes.undo(id, Authz.require(Permission.REMEDIATE));
+    public ChangeSet undo(@PathVariable String id, SecureTestPrincipal principal) {
+        return changes.undo(id, Authz.require(principal, Permission.REMEDIATE));
     }
 }

@@ -80,57 +80,57 @@ public class GovernanceApiController {
     // ------------------------------------------------------------------ migration
 
     @GetMapping("/migrations/discover")
-    public Inventory discover() {
-        Authz.require(Permission.VIEW);
+    public Inventory discover(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         requireMigrationModule();
         return migrations.discover();
     }
 
     @GetMapping("/migrations/matrix")
-    public Map<String, Object> matrix() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> matrix(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return migrations.matrix();
     }
 
     public record AssessRequest(int javaVersion, String springBootVersion) { }
 
     @PostMapping("/migrations/assess")
-    public MigrationRun assess(@RequestBody AssessRequest req) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+    public MigrationRun assess(@RequestBody AssessRequest req, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         requireMigrationModule();
         if (req.springBootVersion() == null) throw ApiException.badRequest("springBootVersion is required");
         return migrations.assess(req.javaVersion(), req.springBootVersion(), p);
     }
 
     @GetMapping("/migrations")
-    public List<MigrationRun> listMigrations() {
-        Authz.require(Permission.VIEW);
+    public List<MigrationRun> listMigrations(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return migrations.list();
     }
 
     @GetMapping("/migrations/{id}")
-    public MigrationRun migration(@PathVariable String id) {
-        Authz.require(Permission.VIEW);
+    public MigrationRun migration(@PathVariable String id, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return migrations.get(id);
     }
 
     @PostMapping("/migrations/{id}/plan")
-    public MigrationRun plan(@PathVariable String id) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+    public MigrationRun plan(@PathVariable String id, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         requireMigrationModule();
         return migrations.plan(id, p);
     }
 
     @PostMapping("/migrations/{id}/preview")
-    public ChangeSet preview(@PathVariable String id, @RequestBody(required = false) Map<String, List<String>> body) {
-        SecureTestPrincipal p = Authz.require(Permission.REMEDIATE);
+    public ChangeSet preview(@PathVariable String id, @RequestBody(required = false) Map<String, List<String>> body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.REMEDIATE);
         requireMigrationModule();
         return migrations.preview(id, body == null ? null : body.get("categories"), p);
     }
 
     @PostMapping("/migrations/{id}/apply")
-    public ChangeSet applyMigration(@PathVariable String id, @RequestBody(required = false) FindingApiController.ApplyRequest body) {
-        SecureTestPrincipal p = Authz.require(Permission.APPROVE);
+    public ChangeSet applyMigration(@PathVariable String id, @RequestBody(required = false) FindingApiController.ApplyRequest body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.APPROVE);
         requireMigrationModule();
         FindingApiController.ApplyRequest r = body == null ? new FindingApiController.ApplyRequest(true, false) : body;
         return migrations.apply(id, r.createBranch(), r.allowDirtyWithSnapshot(), p);
@@ -139,8 +139,8 @@ public class GovernanceApiController {
     // ------------------------------------------------------------------ compliance
 
     @GetMapping("/compliance")
-    public Map<String, Object> compliance() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> compliance(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<String, Object> m = new LinkedHashMap<>(compliance.summary());
         m.put("controls", compliance.evaluate());
         return m;
@@ -149,23 +149,23 @@ public class GovernanceApiController {
     public record Applicability(String framework, String controlId, boolean notApplicable, String reason) { }
 
     @PutMapping("/compliance/applicability")
-    public Map<String, Object> applicability(@RequestBody Applicability req) {
-        SecureTestPrincipal p = Authz.require(Permission.APPROVE);
+    public Map<String, Object> applicability(@RequestBody Applicability req, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.APPROVE);
         compliance.setNotApplicable(req.framework(), req.controlId(), req.notApplicable(), req.reason(), p.name());
-        audit.record(p.name(), p.remoteAddress(), "compliance.applicability", req.framework() + "/" + req.controlId(), "OK",
+        audit.record(p, "compliance.applicability", req.framework() + "/" + req.controlId(), "OK",
                 Map.of("notApplicable", String.valueOf(req.notApplicable()), "reason", String.valueOf(req.reason())));
-        return compliance();
+        return compliance(principal);
     }
 
     /** Evidence pack: compliance status, open findings, scan metadata, audit trail and a manifest of SHA-256 checksums. */
     @GetMapping("/compliance/evidence-pack")
-    public ResponseEntity<Resource> evidencePack() throws IOException {
-        SecureTestPrincipal p = Authz.require(Permission.AUDIT);
+    public ResponseEntity<Resource> evidencePack(SecureTestPrincipal principal) throws IOException {
+        SecureTestPrincipal p = Authz.require(principal, Permission.AUDIT);
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
                 .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .writerWithDefaultPrettyPrinter();
         Map<String, byte[]> entries = new LinkedHashMap<>();
-        entries.put("compliance.json", mapper.writeValueAsBytes(compliance()));
+        entries.put("compliance.json", mapper.writeValueAsBytes(compliance(principal)));
         entries.put("findings.json", mapper.writeValueAsBytes(findings.all().stream().filter(Finding::isOpen).toList()));
         entries.put("scans.json", mapper.writeValueAsBytes(jobs.all()));
         entries.put("audit-events.json", mapper.writeValueAsBytes(audit.query(e -> true, 0, 5000)));
@@ -186,7 +186,7 @@ public class GovernanceApiController {
                 z.closeEntry();
             }
         }
-        audit.record(p.name(), p.remoteAddress(), "compliance.evidence.exported", "evidence-pack", "OK", Map.of("sha256", Hashing.sha256(bos.toByteArray())));
+        audit.record(p, "compliance.evidence.exported", "evidence-pack", "OK", Map.of("sha256", Hashing.sha256(bos.toByteArray())));
         return ResponseEntity.ok().contentType(MediaType.parseMediaType("application/zip"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("securetest-evidence-" + Instant.now().toEpochMilli() + ".zip").build().toString())
                 .body(new ByteArrayResource(bos.toByteArray()));
@@ -195,15 +195,15 @@ public class GovernanceApiController {
     // ------------------------------------------------------------------ reports
 
     @GetMapping("/reports")
-    public Map<String, Object> reports() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> reports(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return Map.of("types", ReportService.TYPES, "reports", reports.list());
     }
 
     @PostMapping("/reports")
     public ResponseEntity<ReportService.Report> generate(@RequestBody ReportService.Request req,
-                                                         @RequestHeader(value = "Idempotency-Key", required = false) String key) {
-        SecureTestPrincipal p = Authz.require(Permission.VIEW);
+                                                         @RequestHeader(value = "Idempotency-Key", required = false) String key, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.VIEW);
         if (key != null && reportIdempotency.containsKey(p.name() + "|" + key)) {
             return ResponseEntity.ok(reports.get(reportIdempotency.get(p.name() + "|" + key)));
         }
@@ -213,20 +213,20 @@ public class GovernanceApiController {
     }
 
     @GetMapping("/reports/{id}")
-    public ReportService.Report report(@PathVariable String id) {
-        Authz.require(Permission.VIEW);
+    public ReportService.Report report(@PathVariable String id, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return reports.get(id);
     }
 
     @GetMapping("/reports/{id}/data")
-    public ResponseEntity<Resource> reportData(@PathVariable String id) {
-        Authz.require(Permission.VIEW);
+    public ResponseEntity<Resource> reportData(@PathVariable String id, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return ScanApiController.download(reports.file(id, "json"), id + ".json", MediaType.APPLICATION_JSON);
     }
 
     @GetMapping("/reports/{id}/download")
-    public ResponseEntity<Resource> download(@PathVariable String id, @RequestParam(defaultValue = "pdf") String format) {
-        SecureTestPrincipal p = Authz.require(Permission.VIEW);
+    public ResponseEntity<Resource> download(@PathVariable String id, @RequestParam(defaultValue = "pdf") String format, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.VIEW);
         Path file = reports.file(id, format);
         MediaType type = switch (format) {
             case "pdf" -> MediaType.APPLICATION_PDF;
@@ -234,7 +234,7 @@ public class GovernanceApiController {
             case "csv" -> MediaType.parseMediaType("text/csv");
             default -> MediaType.APPLICATION_JSON;
         };
-        audit.record(p.name(), p.remoteAddress(), "report.exported", id, "OK", Map.of("format", format));
+        audit.record(p, "report.exported", id, "OK", Map.of("format", format));
         return ScanApiController.download(file, "securetest-" + id + "." + format, type);
     }
 
@@ -243,8 +243,8 @@ public class GovernanceApiController {
     @GetMapping("/audit-events")
     public Map<String, Object> auditEvents(@RequestParam(required = false) String actor, @RequestParam(required = false) String action,
                                            @RequestParam(required = false) String target,
-                                           @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) {
-        Authz.require(Permission.AUDIT);
+                                           @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.AUDIT);
         Predicate<AuditEvent> f = e -> (actor == null || actor.isBlank() || e.actor().contains(actor))
                 && (action == null || action.isBlank() || e.action().startsWith(action))
                 && (target == null || target.isBlank() || String.valueOf(e.target()).contains(target));
@@ -253,8 +253,8 @@ public class GovernanceApiController {
     }
 
     @GetMapping("/audit-events/verify")
-    public Map<String, Object> verifyAudit() {
-        Authz.require(Permission.AUDIT);
+    public Map<String, Object> verifyAudit(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.AUDIT);
         return audit.verify();
     }
 }

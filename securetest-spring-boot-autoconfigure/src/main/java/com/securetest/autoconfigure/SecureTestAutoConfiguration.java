@@ -24,7 +24,6 @@ import com.securetest.adapters.external.TrivyAdapter;
 import com.securetest.adapters.external.ZapAdapter;
 import com.securetest.adapters.fix.DependencyUpgradeFix;
 import com.securetest.adapters.fix.LineReplaceFix;
-import com.securetest.autoconfigure.security.SecureTestSecurityFilter;
 import com.securetest.autoconfigure.service.AuditService;
 import com.securetest.autoconfigure.service.ChangeSetService;
 import com.securetest.autoconfigure.service.ComplianceService;
@@ -49,7 +48,8 @@ import com.securetest.autoconfigure.support.Extensions.HealthSource;
 import com.securetest.autoconfigure.support.Extensions.MeterSource;
 import com.securetest.autoconfigure.support.LocalStore;
 import com.securetest.autoconfigure.support.SecretResolver;
-import com.securetest.autoconfigure.web.ApiExceptionHandler;
+import com.securetest.autoconfigure.reactive.ReactiveWebConfiguration;
+import com.securetest.autoconfigure.servlet.ServletWebConfiguration;
 import com.securetest.autoconfigure.web.CoreApiController;
 import com.securetest.autoconfigure.web.FindingApiController;
 import com.securetest.autoconfigure.web.GovernanceApiController;
@@ -68,7 +68,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
@@ -76,7 +75,6 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
-import org.springframework.web.servlet.DispatcherServlet;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -84,16 +82,16 @@ import java.util.Map;
 
 /**
  * Entry point: everything SecureTest needs is registered here by conditional auto-configuration (FR-001, FR-003).
- * Adding the starter to a Spring MVC application is enough to get the dashboard at {@code /securetest}.
+ * Adding the starter to any Spring Boot web application (Spring MVC or WebFlux) is enough to get the dashboard at
+ * {@code /securetest}. Web-stack specifics live in {@link ServletWebConfiguration} and {@link ReactiveWebConfiguration}.
  */
 @AutoConfiguration
-@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@ConditionalOnClass(DispatcherServlet.class)
+@ConditionalOnWebApplication
 @ConditionalOnProperty(prefix = "securetest", name = "enabled", havingValue = "true", matchIfMissing = true)
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, ApiExceptionHandler.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
         SecureTestAutoConfiguration.MailBridgeConfig.class})
 public class SecureTestAutoConfiguration {
@@ -243,7 +241,13 @@ public class SecureTestAutoConfiguration {
     // ------------------------------------------------------------------ web
 
     @Bean
-    FilterRegistrationBean<SecureTestSecurityFilter> secureTestSecurityFilter(SecureTestProperties props, SecretResolver secrets, AuditService audit) {
+    com.securetest.autoconfigure.security.InitialAdminCredential secureTestInitialAdmin(LocalStore store) {
+        return new com.securetest.autoconfigure.security.InitialAdminCredential(store.dir());
+    }
+
+    @Bean
+    com.securetest.autoconfigure.security.DashboardGate secureTestDashboardGate(SecureTestProperties props, SecretResolver secrets, AuditService audit,
+                                                                               com.securetest.autoconfigure.security.InitialAdminCredential initialAdmin, AppContext app) {
         var auth = props.getDashboard().getAuthentication();
         com.securetest.autoconfigure.security.OidcAuthenticator oidc = null;
         if ("oidc".equalsIgnoreCase(auth.getProvider())) {
@@ -252,33 +256,15 @@ public class SecureTestAutoConfiguration {
             }
             oidc = new com.securetest.autoconfigure.security.OidcAuthenticator(auth.getOidc(), auth.getRoleMapping(), secrets);
         }
-        FilterRegistrationBean<SecureTestSecurityFilter> reg = new FilterRegistrationBean<>(new SecureTestSecurityFilter(props, secrets, oidc, audit));
-        String path = props.normalizedPath();
-        reg.addUrlPatterns(path, path + "/*");
-        reg.setName("secureTestSecurityFilter");
-        reg.setOrder(0); // after Spring Security (-100) so "container" authentication can see the host principal
-        return reg;
-    }
-
-    @Bean
-    FilterRegistrationBean<TelemetryService.HttpMetricsFilter> secureTestHttpMetricsFilter(TelemetryService telemetry, SecureTestProperties props) {
-        FilterRegistrationBean<TelemetryService.HttpMetricsFilter> reg =
-                new FilterRegistrationBean<>(new TelemetryService.HttpMetricsFilter(telemetry, props.normalizedPath() + "/"));
-        reg.addUrlPatterns("/*");
-        reg.setName("secureTestHttpMetricsFilter");
-        reg.setOrder(Ordered.HIGHEST_PRECEDENCE + 20);
-        return reg;
-    }
-
-    @Bean
-    DashboardWebMvcConfigurer secureTestDashboardWebMvc(SecureTestProperties props) {
-        return new DashboardWebMvcConfigurer(props.normalizedPath());
+        return new com.securetest.autoconfigure.security.DashboardGate(props, secrets, oidc, audit, initialAdmin, app::productionLike);
     }
 
     @Bean
     SecureTestLifecycle secureTestLifecycle(SecureTestProperties props, AppContext app, ControlPlaneClient controlPlane,
-                                            ScannerRegistry registry, ModuleService modules) {
-        return new SecureTestLifecycle(props, app, controlPlane, registry, modules);
+                                            ScannerRegistry registry, ModuleService modules,
+                                            com.securetest.autoconfigure.security.DashboardGate gate,
+                                            com.securetest.autoconfigure.security.InitialAdminCredential initialAdmin) {
+        return new SecureTestLifecycle(props, app, controlPlane, registry, modules, gate, initialAdmin);
     }
 
     // ------------------------------------------------------------------ scanners (ports & adapters)

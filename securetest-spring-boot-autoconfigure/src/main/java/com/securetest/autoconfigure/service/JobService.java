@@ -267,7 +267,7 @@ public class JobService {
         if (d.isRequiresSourceRoot() && app.sourceRoot().isEmpty()) checks.add(PreflightCheck.error("Workspace", "No source workspace configured."));
         List<PreflightCheck> blocking = checks.stream().filter(PreflightCheck::blocking).toList();
         if (!blocking.isEmpty()) {
-            audit.record(principal.name(), principal.remoteAddress(), "scan.rejected", d.getId(), "REJECTED", Map.of("reason", blocking.get(0).message()));
+            audit.record(principal, "scan.rejected", d.getId(), "REJECTED", Map.of("reason", blocking.get(0).message()));
             throw new ApiException(422, "preflight_failed", "Preflight checks failed", checks);
         }
         jobs.put(job.id, job);
@@ -276,11 +276,11 @@ public class JobService {
         if (needsApproval && !principal.has(Permission.APPROVE)) {
             job.status = JobStatus.AWAITING_APPROVAL;
             contexts.put(job.id, ctx);
-            audit.record(principal.name(), principal.remoteAddress(), "scan.requested", job.id, "AWAITING_APPROVAL", Map.of("scanner", d.getId()));
+            audit.record(principal, "scan.requested", job.id, "AWAITING_APPROVAL", Map.of("scanner", d.getId()));
             notifications.publish("approval.required", "Active scan " + d.getName() + " requested by " + principal.name() + " awaits approval (" + job.id + ")", Map.of("jobId", job.id));
         } else {
             if (needsApproval) job.approvedBy = principal.name() + " (self-approved)";
-            audit.record(principal.name(), principal.remoteAddress(), "scan.launched", job.id, "QUEUED",
+            audit.record(principal, "scan.launched", job.id, "QUEUED",
                     Map.of("scanner", d.getId(), "mode", d.getMode().name(), "confirmed", String.valueOf(req.confirmed())));
             enqueue(job, scanner, ctx);
         }
@@ -295,7 +295,7 @@ public class JobService {
         RuntimeScanContext ctx = contexts.remove(id);
         if (ctx == null) throw ApiException.conflict("Approval context expired; submit the scan again.");
         job.approvedBy = approver.name();
-        audit.record(approver.name(), approver.remoteAddress(), "scan.approved", id, "QUEUED", Map.of("requestedBy", job.requestedBy));
+        audit.record(approver, "scan.approved", id, "QUEUED", Map.of("requestedBy", job.requestedBy));
         enqueue(job, registry.get(job.scannerId), ctx);
         store.markDirty("jobs");
         return job;
@@ -308,7 +308,7 @@ public class JobService {
         job.status = JobStatus.REJECTED;
         job.error = "Rejected by " + approver.name() + (reason == null ? "" : ": " + reason);
         job.endedAt = Instant.now();
-        audit.record(approver.name(), approver.remoteAddress(), "scan.rejected", id, "REJECTED", Map.of("reason", String.valueOf(reason)));
+        audit.record(approver, "scan.rejected", id, "REJECTED", Map.of("reason", String.valueOf(reason)));
         store.markDirty("jobs");
         return job;
     }
@@ -326,7 +326,7 @@ public class JobService {
             contexts.remove(id);
         }
         job.appendLog("Cancellation requested by " + principal.name());
-        audit.record(principal.name(), principal.remoteAddress(), "scan.cancelled", id, "OK", Map.of());
+        audit.record(principal, "scan.cancelled", id, "OK", Map.of());
         store.markDirty("jobs");
         return job;
     }

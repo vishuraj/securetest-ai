@@ -1,6 +1,5 @@
 package com.securetest.autoconfigure.service;
 
-import com.securetest.autoconfigure.security.Authz;
 import com.securetest.autoconfigure.security.SecureTestPrincipal;
 import com.securetest.autoconfigure.support.LocalStore;
 import com.securetest.core.model.AuditEvent;
@@ -62,22 +61,21 @@ public class AuditService {
         }
     }
 
-    public AuditEvent record(String action, String target, String outcome, Map<String, String> details) {
-        SecureTestPrincipal p;
-        try {
-            p = Authz.current();
-        } catch (RuntimeException e) {
-            p = SecureTestPrincipal.system();
-        }
-        return record(p.name(), p.remoteAddress(), action, target, outcome, details);
+    /** Records an action by a dashboard user; carries the request's correlation id. */
+    public AuditEvent record(SecureTestPrincipal p, String action, String target, String outcome, Map<String, String> details) {
+        SecureTestPrincipal who = p == null ? SecureTestPrincipal.system() : p;
+        return record(who.name(), who.remoteAddress(), who.correlationId(), action, target, outcome, details);
     }
 
-    public synchronized AuditEvent record(String actor, String remote, String action, String target, String outcome, Map<String, String> details) {
+    public AuditEvent record(String actor, String remote, String action, String target, String outcome, Map<String, String> details) {
+        return record(actor, remote, null, action, target, outcome, details);
+    }
+
+    public synchronized AuditEvent record(String actor, String remote, String corr, String action, String target, String outcome, Map<String, String> details) {
         long seq = ++sequence;
         String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
         Map<String, String> d = details == null ? Map.of() : new LinkedHashMap<>(details);
-        String corr = Authz.correlationId();
         String payload = seq + "|" + id + "|" + now + "|" + actor + "|" + action + "|" + target + "|" + outcome + "|" + corr + "|" + d + "|" + lastHash;
         String hash = Hashing.sha256(payload);
         AuditEvent e = new AuditEvent(seq, id, now, actor, action, target, outcome, corr, remote, d, lastHash, hash);

@@ -4,13 +4,7 @@ import com.securetest.autoconfigure.SecureTestProperties;
 import com.securetest.autoconfigure.support.Extensions.HealthSource;
 import com.securetest.autoconfigure.support.Extensions.MeterSource;
 import com.securetest.core.model.ModuleCatalog;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.web.filter.OncePerRequestFilter;
 
-import java.io.IOException;
 import java.lang.management.ClassLoadingMXBean;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
@@ -278,7 +272,7 @@ public class TelemetryService {
         private final AtomicLong total = new AtomicLong();
         private final AtomicLong errors = new AtomicLong();
 
-        void record(long durationMs, int code) {
+        public void record(long durationMs, int code) {
             int i = Math.floorMod(idx.getAndIncrement(), SIZE);
             at[i] = System.currentTimeMillis();
             ms[i] = (int) Math.min(Integer.MAX_VALUE, durationMs);
@@ -314,32 +308,6 @@ public class TelemetryService {
         private static int p(int[] s, int pct) {
             if (s.length == 0) return 0;
             return s[Math.max(0, Math.min(s.length - 1, (int) Math.ceil(pct / 100.0 * s.length) - 1))];
-        }
-    }
-
-    /** Records host request timings (excluding the dashboard) only while the Metrics module is enabled. */
-    public static class HttpMetricsFilter extends OncePerRequestFilter {
-        private final TelemetryService telemetry;
-        private final String excludedPrefix;
-
-        public HttpMetricsFilter(TelemetryService telemetry, String excludedPrefix) {
-            this.telemetry = telemetry;
-            this.excludedPrefix = excludedPrefix;
-        }
-
-        @Override
-        protected boolean shouldNotFilter(HttpServletRequest request) {
-            return !telemetry.httpRecording() || request.getRequestURI().contains(excludedPrefix);
-        }
-
-        @Override
-        protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
-            long start = System.nanoTime();
-            try {
-                chain.doFilter(req, res);
-            } finally {
-                telemetry.http.record((System.nanoTime() - start) / 1_000_000, res.getStatus());
-            }
         }
     }
 

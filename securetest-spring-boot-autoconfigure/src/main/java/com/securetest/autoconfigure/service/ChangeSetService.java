@@ -67,7 +67,7 @@ public class ChangeSetService {
             cs.provenance = provenance;
             sets.put(cs.id, cs);
             store.markDirty("changesets");
-            audit.record(p.name(), p.remoteAddress(), kind.toLowerCase() + ".proposed", cs.id, "PREVIEW",
+            audit.record(p, kind.toLowerCase() + ".proposed", cs.id, "PREVIEW",
                     Map.of("reference", String.valueOf(reference), "files", String.valueOf(cs.files.size()), "provenance", String.valueOf(provenance)));
             return cs;
         } catch (java.io.IOException e) {
@@ -88,7 +88,7 @@ public class ChangeSetService {
 
     public String patch(String id, SecureTestPrincipal p) {
         ChangeSet cs = get(id);
-        audit.record(p.name(), p.remoteAddress(), "changeset.exported", id, "OK", Map.of());
+        audit.record(p, "changeset.exported", id, "OK", Map.of());
         return engine.exportPatch(cs);
     }
 
@@ -117,7 +117,7 @@ public class ChangeSetService {
         } finally {
             store.markDirty("changesets");
         }
-        audit.record(p.name(), p.remoteAddress(), "changeset.applied", id, cs.status.name(),
+        audit.record(p, "changeset.applied", id, cs.status.name(),
                 Map.of("branch", String.valueOf(cs.gitBranch), "files", String.valueOf(cs.files.size()), "snapshotOfDirty", String.valueOf(cs.snapshotOfDirtyWorkspace)));
         listeners.forEach(l -> l.onChange(cs, "applied"));
         return cs;
@@ -140,7 +140,7 @@ public class ChangeSetService {
         } finally {
             store.markDirty("changesets");
         }
-        audit.record(p.name(), p.remoteAddress(), "changeset.validated", id, cs.status.name(), Map.of("command", String.join(" ", command)));
+        audit.record(p, "changeset.validated", id, cs.status.name(), Map.of("command", String.join(" ", command)));
         listeners.forEach(l -> l.onChange(cs, "validated"));
         return cs;
     }
@@ -155,7 +155,7 @@ public class ChangeSetService {
         } finally {
             store.markDirty("changesets");
         }
-        audit.record(p.name(), p.remoteAddress(), "changeset.committed", id, "OK", Map.of("commit", String.valueOf(cs.gitCommit)));
+        audit.record(p, "changeset.committed", id, "OK", Map.of("commit", String.valueOf(cs.gitCommit)));
         listeners.forEach(l -> l.onChange(cs, "committed"));
         return cs;
     }
@@ -172,7 +172,7 @@ public class ChangeSetService {
         } finally {
             store.markDirty("changesets");
         }
-        audit.record(p.name(), p.remoteAddress(), "changeset.undone", id, cs.status.name(), Map.of("conflicts", String.valueOf(cs.conflicts.size())));
+        audit.record(p, "changeset.undone", id, cs.status.name(), Map.of("conflicts", String.valueOf(cs.conflicts.size())));
         listeners.forEach(l -> l.onChange(cs, "undone"));
         return cs;
     }

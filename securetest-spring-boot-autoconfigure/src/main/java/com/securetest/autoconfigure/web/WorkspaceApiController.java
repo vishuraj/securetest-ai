@@ -6,6 +6,7 @@ import com.securetest.autoconfigure.SecureTestProperties;
 import com.securetest.autoconfigure.security.ApiException;
 import com.securetest.autoconfigure.security.Authz;
 import com.securetest.autoconfigure.security.Rbac.Permission;
+import com.securetest.autoconfigure.security.RequestInfo;
 import com.securetest.autoconfigure.security.SecureTestPrincipal;
 import com.securetest.autoconfigure.service.AuditService;
 import com.securetest.autoconfigure.service.FindingService;
@@ -19,7 +20,6 @@ import com.securetest.core.model.Finding;
 import com.securetest.core.model.ModuleCatalog;
 import com.securetest.core.spi.ScannerDescriptor;
 import com.securetest.core.util.Redactor;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -69,49 +69,49 @@ public class WorkspaceApiController {
     // ------------------------------------------------------------------ manual & exploratory testing
 
     @GetMapping("/testing/cases")
-    public Map<String, Object> cases() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> cases(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return Map.of("cases", tests.cases(), "summary", tests.summary());
     }
 
     @PostMapping("/testing/cases")
-    public TestManagementService.TestCase saveCase(@RequestBody TestManagementService.TestCase body) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+    public TestManagementService.TestCase saveCase(@RequestBody TestManagementService.TestCase body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         TestManagementService.TestCase c = tests.saveCase(body, p.name());
-        audit.record(p.name(), p.remoteAddress(), "testcase.saved", c.id, "OK", Map.of());
+        audit.record(p, "testcase.saved", c.id, "OK", Map.of());
         return c;
     }
 
     @PostMapping("/testing/cases/{id}/executions")
-    public TestManagementService.TestCase execute(@PathVariable String id, @RequestBody Map<String, String> body) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+    public TestManagementService.TestCase execute(@PathVariable String id, @RequestBody Map<String, String> body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         TestManagementService.TestCase c = tests.execute(id, body.getOrDefault("status", ""), body.get("notes"), body.get("evidence"), p.name());
-        audit.record(p.name(), p.remoteAddress(), "testcase.executed", id, c.status, Map.of());
+        audit.record(p, "testcase.executed", id, c.status, Map.of());
         return c;
     }
 
     @DeleteMapping("/testing/cases/{id}")
-    public void deleteCase(@PathVariable String id) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
+    public void deleteCase(@PathVariable String id, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
         tests.deleteCase(id);
-        audit.record(p.name(), p.remoteAddress(), "testcase.deleted", id, "OK", Map.of());
+        audit.record(p, "testcase.deleted", id, "OK", Map.of());
     }
 
     @GetMapping("/testing/sessions")
-    public List<TestManagementService.Session> sessions() {
-        Authz.require(Permission.VIEW);
+    public List<TestManagementService.Session> sessions(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return tests.sessions();
     }
 
     @PostMapping("/testing/sessions")
-    public TestManagementService.Session saveSession(@RequestBody TestManagementService.Session body) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+    public TestManagementService.Session saveSession(@RequestBody TestManagementService.Session body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         return tests.saveSession(body, p.name());
     }
 
     @PutMapping("/testing/sessions/{id}")
-    public TestManagementService.Session updateSession(@PathVariable String id, @RequestBody TestManagementService.Session body) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+    public TestManagementService.Session updateSession(@PathVariable String id, @RequestBody TestManagementService.Session body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         body.id = id;
         return tests.saveSession(body, p.name());
     }
@@ -119,8 +119,8 @@ public class WorkspaceApiController {
     // ------------------------------------------------------------------ integrations
 
     @GetMapping("/integrations")
-    public Map<String, Object> integrations() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> integrations(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         List<Map<String, Object>> adapters = new ArrayList<>();
         for (ScannerDescriptor d : registry.descriptors(null)) {
             Map<String, Object> a = new LinkedHashMap<>();
@@ -155,11 +155,11 @@ public class WorkspaceApiController {
     /** Machine-to-machine ingestion of runtime security alerts (Falco HTTP output, Wazuh integrator, SIEM webhook). */
     @PostMapping("/integrations/events")
     public Map<String, Object> ingest(@RequestHeader(value = "X-SecureTest-Token", required = false) String token,
-                                      @RequestBody JsonNode body, HttpServletRequest req) {
+                                      @RequestBody JsonNode body, RequestInfo info) {
         String expected = secrets.resolve(props.getSecurity().getIngestTokenRef());
         if (expected == null || expected.isBlank()) throw ApiException.notFound("Event ingestion is not configured");
         if (token == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
-            audit.record("webhook", req.getRemoteAddr(), "events.ingest", "integrations", "DENIED", Map.of());
+            audit.record("webhook", info.remoteAddress(), "events.ingest", "integrations", "DENIED", Map.of());
             throw new ApiException(401, "unauthenticated", "Invalid ingestion token");
         }
         if (!modules.isEnabled(ModuleCatalog.ADVANCED_SECURITY)) throw ApiException.conflict("The Advanced Security module is disabled.");
@@ -179,7 +179,7 @@ public class WorkspaceApiController {
             converted.add(f);
         }
         List<Finding> stored = findings.ingestExternal("webhook", converted);
-        audit.record("webhook", req.getRemoteAddr(), "events.ingest", "integrations", "OK", Map.of("received", String.valueOf(events.size()), "stored", String.valueOf(stored.size())));
+        audit.record("webhook", info.remoteAddress(), "events.ingest", "integrations", "OK", Map.of("received", String.valueOf(events.size()), "stored", String.valueOf(stored.size())));
         return Map.of("received", events.size(), "stored", stored.size());
     }
 }

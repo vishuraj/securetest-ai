@@ -54,8 +54,8 @@ public class ScanApiController {
 
     @PostMapping("/scans")
     public ResponseEntity<Map<String, Object>> create(@RequestBody ScanRequest req,
-                                                      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        SecureTestPrincipal p = Authz.require(Permission.EXECUTE);
+                                                      @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         if (req.scannerId() == null) throw ApiException.badRequest("scannerId is required");
         Map<String, String> options = new LinkedHashMap<>();
         if (req.profileName() != null && !req.profileName().isBlank() && !req.saveProfile()) {
@@ -63,7 +63,7 @@ public class ScanApiController {
         }
         if (req.options() != null) req.options().forEach((k, v) -> { if (!k.startsWith("_")) options.put(k, v); });
         if (req.saveProfile() && req.profileName() != null && !req.profileName().isBlank()) {
-            Authz.require(Permission.CONFIGURE);
+            Authz.require(principal, Permission.CONFIGURE);
             profiles.save(req.profileName(), req.scannerId(), options, p.name());
         }
         ScanJob job = jobs.submit(new JobService.SubmitRequest(req.scannerId(), options, req.confirmed(), req.profileName(), idempotencyKey), p);
@@ -75,37 +75,37 @@ public class ScanApiController {
 
     @GetMapping("/scans")
     public FindingService.Page<ScanJob> list(@RequestParam(required = false) String module, @RequestParam(required = false) String scanner,
-                                             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size) {
-        Authz.require(Permission.VIEW);
+                                             @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "25") int size, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return jobs.list(module, scanner, Math.max(0, page), Math.min(200, Math.max(1, size)));
     }
 
     @GetMapping("/scans/{scanId}")
-    public ScanJob get(@PathVariable String scanId) {
-        Authz.require(Permission.VIEW);
+    public ScanJob get(@PathVariable String scanId, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return jobs.get(scanId);
     }
 
     @PostMapping("/scans/{scanId}/cancel")
-    public ScanJob cancel(@PathVariable String scanId) {
-        return jobs.cancel(scanId, Authz.require(Permission.EXECUTE));
+    public ScanJob cancel(@PathVariable String scanId, SecureTestPrincipal principal) {
+        return jobs.cancel(scanId, Authz.require(principal, Permission.EXECUTE));
     }
 
     @PostMapping("/scans/{scanId}/approve")
-    public ScanJob approve(@PathVariable String scanId) {
-        return jobs.approve(scanId, Authz.require(Permission.APPROVE));
+    public ScanJob approve(@PathVariable String scanId, SecureTestPrincipal principal) {
+        return jobs.approve(scanId, Authz.require(principal, Permission.APPROVE));
     }
 
     @PostMapping("/scans/{scanId}/reject")
-    public ScanJob reject(@PathVariable String scanId, @RequestBody(required = false) Map<String, String> body) {
-        return jobs.reject(scanId, Authz.require(Permission.APPROVE), body == null ? null : body.get("reason"));
+    public ScanJob reject(@PathVariable String scanId, @RequestBody(required = false) Map<String, String> body, SecureTestPrincipal principal) {
+        return jobs.reject(scanId, Authz.require(principal, Permission.APPROVE), body == null ? null : body.get("reason"));
     }
 
     @GetMapping("/scans/{scanId}/artifacts/{name}")
-    public ResponseEntity<Resource> artifact(@PathVariable String scanId, @PathVariable String name) {
-        SecureTestPrincipal p = Authz.require(Permission.VIEW);
+    public ResponseEntity<Resource> artifact(@PathVariable String scanId, @PathVariable String name, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.VIEW);
         Path file = jobs.artifact(scanId, name);
-        audit.record(p.name(), p.remoteAddress(), "artifact.downloaded", scanId + "/" + name, "OK", Map.of());
+        audit.record(p, "artifact.downloaded", scanId + "/" + name, "OK", Map.of());
         MediaType type = name.endsWith(".json") ? MediaType.APPLICATION_JSON : name.endsWith(".png") ? MediaType.IMAGE_PNG
                 : name.endsWith(".jpg") || name.endsWith(".jpeg") ? MediaType.IMAGE_JPEG : MediaType.APPLICATION_OCTET_STREAM;
         if (type.getType().equals("image")) {
@@ -116,11 +116,11 @@ public class ScanApiController {
 
     /** Latest CycloneDX SBOM produced by the dependency scanner. */
     @GetMapping("/sbom")
-    public ResponseEntity<Resource> sbom() {
-        SecureTestPrincipal p = Authz.require(Permission.VIEW);
+    public ResponseEntity<Resource> sbom(SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.VIEW);
         ScanJob job = jobs.latest(DependencyScanner.ID, JobStatus.COMPLETED)
                 .orElseThrow(() -> ApiException.notFound("SBOM (run the dependency scan first)"));
-        audit.record(p.name(), p.remoteAddress(), "sbom.exported", job.id, "OK", Map.of());
+        audit.record(p, "sbom.exported", job.id, "OK", Map.of());
         return download(jobs.artifact(job.id, "sbom.cdx.json"), "sbom.cdx.json", MediaType.APPLICATION_JSON);
     }
 
@@ -133,57 +133,57 @@ public class ScanApiController {
     // ------------------------------------------------------------------ profiles
 
     @GetMapping("/profiles")
-    public List<ProfileService.Profile> profiles(@RequestParam(required = false) String scanner) {
-        Authz.require(Permission.VIEW);
+    public List<ProfileService.Profile> profiles(@RequestParam(required = false) String scanner, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return profiles.list(scanner);
     }
 
     public record ProfileRequest(String name, String scannerId, Map<String, String> options) { }
 
     @PostMapping("/profiles")
-    public ProfileService.Profile saveProfile(@RequestBody ProfileRequest req) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
+    public ProfileService.Profile saveProfile(@RequestBody ProfileRequest req, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
         ProfileService.Profile saved = profiles.save(req.name(), req.scannerId(), req.options(), p.name());
-        audit.record(p.name(), p.remoteAddress(), "profile.saved", req.scannerId() + "/" + req.name(), "OK", Map.of());
+        audit.record(p, "profile.saved", req.scannerId() + "/" + req.name(), "OK", Map.of());
         return saved;
     }
 
     @DeleteMapping("/profiles/{scannerId}/{name}")
-    public void deleteProfile(@PathVariable String scannerId, @PathVariable String name) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
+    public void deleteProfile(@PathVariable String scannerId, @PathVariable String name, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
         profiles.delete(scannerId, name);
-        audit.record(p.name(), p.remoteAddress(), "profile.deleted", scannerId + "/" + name, "OK", Map.of());
+        audit.record(p, "profile.deleted", scannerId + "/" + name, "OK", Map.of());
     }
 
     // ------------------------------------------------------------------ schedules
 
     @GetMapping("/schedules")
-    public List<ScheduleService.Schedule> schedules() {
-        Authz.require(Permission.VIEW);
+    public List<ScheduleService.Schedule> schedules(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return schedules.list();
     }
 
     public record ScheduleRequest(String scannerId, String profileName, String cron) { }
 
     @PostMapping("/schedules")
-    public ScheduleService.Schedule createSchedule(@RequestBody ScheduleRequest req) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
+    public ScheduleService.Schedule createSchedule(@RequestBody ScheduleRequest req, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
         ScheduleService.Schedule s = schedules.create(req.scannerId(), req.profileName(), req.cron(), p);
-        audit.record(p.name(), p.remoteAddress(), "schedule.created", s.id, "OK", Map.of("scanner", req.scannerId(), "cron", req.cron()));
+        audit.record(p, "schedule.created", s.id, "OK", Map.of("scanner", req.scannerId(), "cron", req.cron()));
         return s;
     }
 
     @PostMapping("/schedules/{id}/enabled")
-    public ScheduleService.Schedule toggleSchedule(@PathVariable String id, @RequestParam boolean value) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
-        audit.record(p.name(), p.remoteAddress(), "schedule.toggled", id, "OK", Map.of("enabled", String.valueOf(value)));
+    public ScheduleService.Schedule toggleSchedule(@PathVariable String id, @RequestParam boolean value, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
+        audit.record(p, "schedule.toggled", id, "OK", Map.of("enabled", String.valueOf(value)));
         return schedules.setEnabled(id, value);
     }
 
     @DeleteMapping("/schedules/{id}")
-    public void deleteSchedule(@PathVariable String id) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
+    public void deleteSchedule(@PathVariable String id, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
         schedules.delete(id);
-        audit.record(p.name(), p.remoteAddress(), "schedule.deleted", id, "OK", Map.of());
+        audit.record(p, "schedule.deleted", id, "OK", Map.of());
     }
 }

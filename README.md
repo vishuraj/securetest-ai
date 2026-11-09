@@ -29,7 +29,9 @@ That is all: start the app and open `/securetest`. Every optional module starts 
 targets, credentials and permissions in the dashboard or in `application.yml`. To align several SecureTest modules, import
 `io.github.vishuraj:securetest-bom` instead of repeating the version.
 
-Requirements: Java 17+ and Spring Boot 3.2–3.5 (servlet stack). Spring Boot 4 starts with a compatibility warning. A WebFlux app logs a warning and nothing is registered.
+Requirements: Java 17+ and Spring Boot 3.2–3.5, with **Spring MVC or Spring WebFlux**. It works with or without Spring Security, in every profile including production, and from any machine. Spring Boot 4 starts with a compatibility warning.
+
+**Signing in.** On the machine running the app you go straight in. From anywhere else, or under a `prod`/`production` profile, the browser asks you to sign in. Use user `admin` and the password SecureTest printed in the startup log the first time it ran. The password is also stored in `~/.securetest/<app-name>/initial-admin-password`. To use your own sign-in instead, configure users, OIDC or container authentication.
 
 ## Build and try it
 
@@ -70,10 +72,11 @@ You can add your own scanner by declaring a `@Bean` that implements `com.securet
 
 ## Security model (secure by default)
 
-* **Dashboard**: on in non-production profiles and **off when a `prod`/`production` profile is active**, unless you set `securetest.dashboard.enabled=true`.
-* **Loopback only** by default (`bind-address: 127.0.0.1`). Remote clients get 403.
+* **Dashboard**: on in every environment; set `securetest.dashboard.enabled=false` to switch it off. It is never open without sign-in beyond the local machine, and in production sign-in is always required.
+* **Local vs remote**: a request counts as local only when it comes from a loopback address *and* carries no proxy forwarding headers, so a reverse proxy on the same host never turns remote users into local administrators. `bind-address: 127.0.0.1` switches to strict local-only mode (remote clients get 403).
 * **Authentication** (`securetest.dashboard.authentication.provider`):
-  * `local-dev` (default): loopback clients act as a local admin.
+  * `auto` (default): local, non-production requests are a local admin; everyone else signs in with HTTP Basic, using configured users or the generated `admin` user. The password is printed in the log only when it is first generated.
+  * `local-dev`: loopback clients act as a local admin; remote clients are rejected.
   * `basic`: users with `{sha256}`/`{env}`/secret-reference passwords.
   * `container`: uses your Spring Security / OIDC principal. Roles come from `SECURETEST_<ROLE>` authorities or `role-mapping`.
   * `oidc`: SecureTest's own single sign-on (Keycloak, Entra ID, Okta, Auth0...). Authorization code + PKCE, ID-token signature checked against the provider's JWKS, roles from a token claim through `role-mapping`, HttpOnly session cookie.
@@ -88,14 +91,13 @@ You can add your own scanner by declaring a `@Bean` that implements `com.securet
 * **Source changes**: these need `securetest.security.allow-auto-remediation=true`. Security-sensitive changes and migrations need APPROVE. SecureTest never applies them under a production profile, never overwrites uncommitted work, always takes a backup first and can undo with conflict detection.
 * **AI is opt-in**: rule-based fixes never send code anywhere. AI-assisted fixes need both `securetest.ai.enabled` and `securetest.ai.data-processing-approved`, run only when a user asks for one finding, send a small redacted code window, are validated (range, secrets, bracket balance), carry provider/model/prompt provenance, and always need an approver to apply.
 
-### Using it alongside Spring Security
+### Spring Security and WebFlux
 
-If your app uses Spring Security, add the dashboard path to your filter chain. Otherwise your app's login or CSRF rules will block it:
+No configuration is needed:
 
-```java
-http.authorizeHttpRequests(a -> a.requestMatchers("/securetest/**").hasRole("SECURETEST_ADMIN") /* or permitAll() with provider=local-dev */)
-    .csrf(c -> c.ignoringRequestMatchers("/securetest/api/**")); // SecureTest applies its own CSRF defence
-```
+* **Spring MVC + Spring Security**: SecureTest registers a `WebSecurityCustomizer` that lets Spring Security skip `/securetest/**`, and SecureTest's own gate secures it. Your application's security rules, including Spring Boot's default login, are unchanged.
+* **WebFlux (with or without Spring Security)**: a WebFilter runs ahead of Spring Security for `/securetest/**`, authenticates the request and hands it to the dispatcher. API work runs on SecureTest's own threads, never on the event loop.
+* **`provider: container`**: SecureTest uses your Spring Security login instead. It is then authenticated by your own security chain, with roles from `SECURETEST_<ROLE>` authorities or `role-mapping`.
 
 ## Configuration reference (all optional)
 
@@ -104,11 +106,11 @@ securetest:
   enabled: true
   mode: embedded                    # embedded | connected
   dashboard:
-    enabled: true                   # unset = on, except under prod profiles
+    enabled: true                   # default; false switches the dashboard off
     path: /securetest
-    bind-address: 127.0.0.1         # 0.0.0.0 only with basic/container auth + TLS
+    bind-address: auto              # auto (default) | 127.0.0.1 = strict local-only
     authentication:
-      provider: local-dev           # local-dev | basic | container | oidc
+      provider: auto                # auto (default) | local-dev | basic | container | oidc
       users:
         - { username: alice, password: "{env}SECURETEST_ALICE_PW", roles: [SECURITY] }
       role-mapping: { ROLE_ADMIN: ADMIN, ROLE_QA: QA, sec-team: SECURITY }   # host roles or OIDC claim values

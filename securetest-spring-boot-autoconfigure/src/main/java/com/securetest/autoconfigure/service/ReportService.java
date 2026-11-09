@@ -126,7 +126,7 @@ public class ReportService {
         if (req.migrationId() != null) r.filters.put("migrationId", req.migrationId());
         reports.put(r.id, r);
         store.markDirty("reports");
-        audit.record(p.name(), p.remoteAddress(), "report.requested", r.id, "GENERATING", Map.of("type", r.type));
+        audit.record(p, "report.requested", r.id, "GENERATING", Map.of("type", r.type));
         executor.submit(() -> generate(r, req));
         return r;
     }

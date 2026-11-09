@@ -1,5 +1,7 @@
 package com.securetest.autoconfigure;
 
+import com.securetest.autoconfigure.security.DashboardGate;
+import com.securetest.autoconfigure.security.InitialAdminCredential;
 import com.securetest.autoconfigure.service.ModuleService;
 import com.securetest.autoconfigure.service.PlatformServices.ControlPlaneClient;
 import com.securetest.autoconfigure.service.ScannerRegistry;
@@ -12,7 +14,7 @@ import org.springframework.context.ApplicationListener;
 
 import java.util.List;
 
-/** Prints where the dashboard lives, warns about unsafe exposure (SRS 9.1) and starts connected mode without blocking startup. */
+/** Prints where the dashboard lives and how to sign in, and starts connected mode without blocking startup. */
 public class SecureTestLifecycle implements ApplicationListener<ApplicationReadyEvent> {
 
     private static final Logger log = LoggerFactory.getLogger("SecureTest");
@@ -22,33 +24,36 @@ public class SecureTestLifecycle implements ApplicationListener<ApplicationReady
     private final ControlPlaneClient controlPlane;
     private final ScannerRegistry registry;
     private final ModuleService modules;
+    private final DashboardGate gate;
+    private final InitialAdminCredential initialAdmin;
 
-    public SecureTestLifecycle(SecureTestProperties props, AppContext app, ControlPlaneClient controlPlane, ScannerRegistry registry, ModuleService modules) {
+    public SecureTestLifecycle(SecureTestProperties props, AppContext app, ControlPlaneClient controlPlane, ScannerRegistry registry,
+                               ModuleService modules, DashboardGate gate, InitialAdminCredential initialAdmin) {
         this.props = props;
         this.app = app;
         this.controlPlane = controlPlane;
         this.registry = registry;
         this.modules = modules;
+        this.gate = gate;
+        this.initialAdmin = initialAdmin;
     }
 
     @Override
     public void onApplicationEvent(ApplicationReadyEvent event) {
-        String bind = props.getDashboard().getBindAddress();
-        boolean loopback = bind == null || bind.startsWith("127.") || bind.equals("::1") || bind.equalsIgnoreCase("localhost");
-        var auth = props.getDashboard().getAuthentication();
+        String url = app.selfBaseUrl() + props.normalizedPath() + "/";
         long enabled = ModuleCatalog.MODULES.stream().filter(m -> modules.isEnabled(m.id())).count();
-        log.info("SecureTest dashboard: {}{}/  ({} scanners available, {} of {} modules enabled, auth={}, {})",
-                app.selfBaseUrl(), props.normalizedPath(), registry.size(), enabled, ModuleCatalog.MODULES.size(),
-                auth.isEnabled() ? auth.getProvider() : "disabled", loopback ? "loopback only" : "network: " + bind);
-        if (!loopback && (!auth.isEnabled() || "local-dev".equalsIgnoreCase(auth.getProvider()))) {
-            log.warn("SecureTest: the dashboard is configured for network access (bind-address={}) without basic/container authentication. "
-                    + "Remote clients will be rejected. Configure securetest.dashboard.authentication.provider=basic|container and TLS.", bind);
+        String access = gate.loopbackOnly() ? "local-only"
+                : app.productionLike() ? "sign-in required (production profile)" : "local developers direct, sign-in from other machines";
+        log.info("SecureTest dashboard: {}  ({} scanners, {} of {} modules enabled, auth={}, {})",
+                url, registry.size(), enabled, ModuleCatalog.MODULES.size(), gate.provider(), access);
+        if (gate.generatedAdminActive() && !gate.loopbackOnly()) {
+            initialAdmin.announce(url);
         }
-        if (!auth.isEnabled()) {
-            log.warn("SecureTest: dashboard authentication is DISABLED. Only loopback clients are served.");
+        if ("none".equals(gate.provider())) {
+            log.warn("SecureTest: dashboard authentication is DISABLED. Only same-machine, non-production requests are served.");
         }
         if (app.productionLike()) {
-            log.warn("SecureTest: dashboard explicitly enabled under a production profile. Keep it protected; source changes are blocked in this mode.");
+            log.info("SecureTest: production profile active: dashboard sign-in is always required and source changes are blocked.");
         }
         if (props.getSecurity().isAllowAutoRemediation()) {
             log.info("SecureTest: assisted remediation is enabled by policy (securetest.security.allow-auto-remediation=true).");

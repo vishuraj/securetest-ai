@@ -5,9 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.securetest.autoconfigure.SecureTestProperties;
 import com.securetest.autoconfigure.security.Rbac.Role;
 import com.securetest.autoconfigure.support.SecretResolver;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -77,8 +74,8 @@ public class OidcAuthenticator {
 
     // ------------------------------------------------------------------ session lookup
 
-    public SecureTestPrincipal principal(HttpServletRequest req) {
-        String id = cookie(req);
+    public SecureTestPrincipal principal(GateRequest req) {
+        String id = req.cookie(COOKIE);
         if (id == null) return null;
         Session s = sessions.get(id);
         if (s == null) return null;
@@ -86,24 +83,18 @@ public class OidcAuthenticator {
             sessions.remove(id);
             return null;
         }
-        return new SecureTestPrincipal(s.name(), s.roles(), "oidc", req.getRemoteAddr());
-    }
-
-    private static String cookie(HttpServletRequest req) {
-        if (req.getCookies() == null) return null;
-        for (Cookie c : req.getCookies()) if (COOKIE.equals(c.getName())) return c.getValue();
-        return null;
+        return new SecureTestPrincipal(s.name(), s.roles(), "oidc", req.remoteAddress());
     }
 
     // ------------------------------------------------------------------ login
 
-    public void startLogin(HttpServletRequest req, HttpServletResponse res, String basePath) throws IOException {
+    public void startLogin(GateRequest req, GateResponse res, String basePath) throws IOException {
         JsonNode d = discovery();
         purgePending();
         String state = random(24);
         String nonce = random(24);
         String verifier = random(48);
-        String next = req.getParameter("next");
+        String next = req.parameter("next");
         if (next == null || !next.startsWith("#") && !next.startsWith("/")) next = "";
         pending.put(state, new Pending(nonce, verifier, next, Instant.now()));
         String url = d.path("authorization_endpoint").asText()
@@ -116,19 +107,19 @@ public class OidcAuthenticator {
                 + "&nonce=" + enc(nonce)
                 + "&code_challenge=" + enc(b64(sha256(verifier.getBytes(StandardCharsets.US_ASCII))))
                 + "&code_challenge_method=S256";
-        res.sendRedirect(url);
+        res.redirect(url);
     }
 
-    public LoginResult callback(HttpServletRequest req, HttpServletResponse res, String basePath) throws IOException {
-        String state = req.getParameter("state");
+    public LoginResult callback(GateRequest req, GateResponse res, String basePath) throws IOException {
+        String state = req.parameter("state");
         Pending p = state == null ? null : pending.remove(state);
         if (p == null || p.created().isBefore(Instant.now().minus(Duration.ofMinutes(10)))) {
             return fail(res, 400, null, "Sign-in expired or the state parameter is invalid. Start again.");
         }
-        if (req.getParameter("error") != null) {
-            return fail(res, 401, null, "Identity provider returned: " + req.getParameter("error"));
+        if (req.parameter("error") != null) {
+            return fail(res, 401, null, "Identity provider returned: " + req.parameter("error"));
         }
-        String code = req.getParameter("code");
+        String code = req.parameter("code");
         if (code == null) return fail(res, 400, null, "Missing authorization code.");
         JsonNode d = discovery();
         StringBuilder form = new StringBuilder("grant_type=authorization_code")
@@ -163,40 +154,28 @@ public class OidcAuthenticator {
         String sid = random(32);
         Instant expires = Instant.now().plus(cfg.getSessionTimeout());
         sessions.put(sid, new Session(user, roles, expires, idToken));
-        Cookie c = new Cookie(COOKIE, sid);
-        c.setHttpOnly(true);
-        c.setSecure(req.isSecure());
-        c.setPath(cookiePath(req, basePath));
-        c.setMaxAge((int) cfg.getSessionTimeout().toSeconds());
-        c.setAttribute("SameSite", "Lax");
-        res.addCookie(c);
-        res.sendRedirect(req.getContextPath() + basePath + "/" + p.next());
+        res.cookie(COOKIE, sid, cookiePath(req, basePath), cfg.getSessionTimeout().toSeconds(), req.secure());
+        res.redirect(req.contextPath() + basePath + "/" + p.next());
         return new LoginResult(true, user, "roles " + roles);
     }
 
-    public void logout(HttpServletRequest req, HttpServletResponse res, String basePath) throws IOException {
-        String id = cookie(req);
+    public void logout(GateRequest req, GateResponse res, String basePath) throws IOException {
+        String id = req.cookie(COOKIE);
         Session s = id == null ? null : sessions.remove(id);
-        Cookie c = new Cookie(COOKIE, "");
-        c.setPath(cookiePath(req, basePath));
-        c.setMaxAge(0);
-        c.setHttpOnly(true);
-        res.addCookie(c);
+        res.cookie(COOKIE, "", cookiePath(req, basePath), 0, req.secure());
         String end = discoverySafe().path("end_session_endpoint").asText(null);
         if (end != null && s != null) {
-            res.sendRedirect(end + (end.contains("?") ? "&" : "?") + "id_token_hint=" + enc(s.idToken())
-                    + "&post_logout_redirect_uri=" + enc(origin(req) + req.getContextPath() + basePath + "/"));
+            res.redirect(end + (end.contains("?") ? "&" : "?") + "id_token_hint=" + enc(s.idToken())
+                    + "&post_logout_redirect_uri=" + enc(origin(req) + req.contextPath() + basePath + "/"));
         } else {
-            res.sendRedirect(req.getContextPath() + basePath + "/");
+            res.redirect(req.contextPath() + basePath + "/");
         }
     }
 
-    private LoginResult fail(HttpServletResponse res, int status, String user, String message) throws IOException {
-        res.setStatus(status);
-        res.setContentType("text/html;charset=UTF-8");
+    private LoginResult fail(GateResponse res, int status, String user, String message) {
         String safe = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        res.getWriter().write("<!doctype html><title>SecureTest sign-in</title><body style=\"font-family:system-ui;padding:40px\">"
-                + "<h1>Sign-in failed</h1><p>" + safe + "</p><p><a href=\"oidc/login\">Try again</a></p></body>");
+        res.send(status, "text/html;charset=UTF-8", "<!doctype html><title>SecureTest sign-in</title><body style=\"font-family:system-ui;padding:40px\">"
+                + "<h1>Sign-in failed</h1><p>" + safe + "</p><p><a href=\"login\">Try again</a></p></body>");
         return new LoginResult(false, user, message);
     }
 
@@ -366,19 +345,19 @@ public class OidcAuthenticator {
         }
     }
 
-    private String redirectUri(HttpServletRequest req, String basePath) {
+    private String redirectUri(GateRequest req, String basePath) {
         if (cfg.getRedirectUri() != null && !cfg.getRedirectUri().isBlank()) return cfg.getRedirectUri();
-        return origin(req) + req.getContextPath() + basePath + "/oidc/callback";
+        return origin(req) + req.contextPath() + basePath + "/oidc/callback";
     }
 
-    private static String origin(HttpServletRequest req) {
-        int port = req.getServerPort();
-        boolean dflt = ("http".equals(req.getScheme()) && port == 80) || ("https".equals(req.getScheme()) && port == 443);
-        return req.getScheme() + "://" + req.getServerName() + (dflt ? "" : ":" + port);
+    private static String origin(GateRequest req) {
+        int port = req.serverPort();
+        boolean dflt = ("http".equals(req.scheme()) && port == 80) || ("https".equals(req.scheme()) && port == 443);
+        return req.scheme() + "://" + req.serverName() + (dflt ? "" : ":" + port);
     }
 
-    private static String cookiePath(HttpServletRequest req, String basePath) {
-        return (req.getContextPath() == null ? "" : req.getContextPath()) + basePath;
+    private static String cookiePath(GateRequest req, String basePath) {
+        return (req.contextPath() == null ? "" : req.contextPath()) + basePath;
     }
 
     private void purgePending() {

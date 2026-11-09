@@ -61,7 +61,7 @@ public class RemediationService {
         Map<String, String> details = new LinkedHashMap<>();
         o.provenance().forEach((k, v) -> details.put(k, String.valueOf(v)));
         details.put("finding", f.id);
-        if (!"DISABLED".equals(o.status())) audit.record(p.name(), p.remoteAddress(), "ai.remediation.requested", f.id, o.status(), details);
+        if (!"DISABLED".equals(o.status())) audit.record(p, "ai.remediation.requested", f.id, o.status(), details);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("findingId", f.id);
         out.put("status", o.status());

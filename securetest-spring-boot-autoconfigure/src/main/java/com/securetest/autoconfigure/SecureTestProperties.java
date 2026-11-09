@@ -74,11 +74,14 @@ public class SecureTestProperties {
     }
 
     public static class Dashboard {
-        /** Unset = enabled except when a 'prod'/'production' profile is active. */
+        /** Set to false to switch the dashboard off. On by default in every environment (sign-in is required off-machine and in production). */
         private Boolean enabled;
         private String path = "/securetest";
-        /** 127.0.0.1 (default) rejects non-loopback clients. Use 0.0.0.0 only with authentication and TLS. */
-        private String bindAddress = "127.0.0.1";
+        /**
+         * auto (default): local developers get in directly, everyone else signs in.
+         * 127.0.0.1 / localhost: reject every non-local client (strict local-only mode).
+         */
+        private String bindAddress = "auto";
         private Authentication authentication = new Authentication();
 
         public Boolean getEnabled() { return enabled; }
@@ -94,12 +97,15 @@ public class SecureTestProperties {
     public static class Authentication {
         private boolean enabled = true;
         /**
-         * local-dev: loopback clients act as a local administrator (development profile).
+         * auto (default): on the same machine (and not in production) you are a local administrator; from anywhere else, or
+         * under a production profile, you sign in with HTTP Basic: configured users, or the generated "admin" user whose
+         * password is printed once at startup and stored in the data directory.
+         * local-dev: loopback clients act as a local administrator; remote clients are rejected.
          * basic: users below with HTTP Basic.
          * container: the host application's authentication (e.g. Spring Security / OIDC); roles via role-mapping.
          * oidc: SecureTest's own OpenID Connect sign-in (authorization code + PKCE); roles from a token claim.
          */
-        private String provider = "local-dev";
+        private String provider = "auto";
         private Oidc oidc = new Oidc();
         private List<User> users = new ArrayList<>();
         /** Host role → SecureTest role (VIEWER, DEVELOPER, QA, SECURITY, DEVOPS, OWNER, ADMIN). */

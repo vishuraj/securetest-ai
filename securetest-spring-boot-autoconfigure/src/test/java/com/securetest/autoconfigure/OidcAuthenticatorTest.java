@@ -11,7 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
+import com.securetest.autoconfigure.security.GateResponse;
+import com.securetest.autoconfigure.servlet.ServletGateRequest;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -111,52 +112,53 @@ class OidcAuthenticatorTest {
     @Test
     void fullAuthorizationCodeFlowWithPkce() throws Exception {
         OidcAuthenticator oidc = authenticator();
-        MockHttpServletResponse redirect = new MockHttpServletResponse();
-        oidc.startLogin(new MockHttpServletRequest("GET", "/securetest/oidc/login"), redirect, "/securetest");
-        Map<String, String> q = query(redirect.getRedirectedUrl());
-        assertThat(redirect.getRedirectedUrl()).startsWith(issuer + "/auth?");
+        GateResponse redirect = new GateResponse();
+        oidc.startLogin(new ServletGateRequest(new MockHttpServletRequest("GET", "/securetest/oidc/login")), redirect, "/securetest");
+        Map<String, String> q = query(redirect.headers().get("Location"));
+        assertThat(redirect.headers().get("Location")).startsWith(issuer + "/auth?");
         assertThat(q).containsEntry("code_challenge_method", "S256").containsEntry("client_id", "securetest").containsKeys("state", "nonce");
         nonce.set(q.get("nonce"));
 
         MockHttpServletRequest cb = new MockHttpServletRequest("GET", "/securetest/oidc/callback");
         cb.setParameter("state", q.get("state"));
         cb.setParameter("code", "abc");
-        MockHttpServletResponse res = new MockHttpServletResponse();
-        OidcAuthenticator.LoginResult r = oidc.callback(cb, res, "/securetest");
+        GateResponse res = new GateResponse();
+        OidcAuthenticator.LoginResult r = oidc.callback(new ServletGateRequest(cb), res, "/securetest");
         assertThat(r.success()).as(r.message()).isTrue();
         assertThat(verifierSeen.get()).isNotBlank();
-        Cookie session = res.getCookie(OidcAuthenticator.COOKIE);
-        assertThat(session).isNotNull();
-        assertThat(session.isHttpOnly()).isTrue();
+        assertThat(res.cookies()).hasSize(1);
+        String setCookie = res.cookies().get(0);
+        assertThat(setCookie).startsWith(OidcAuthenticator.COOKIE + "=").contains("HttpOnly").contains("SameSite=Lax");
+        Cookie session = new Cookie(OidcAuthenticator.COOKIE, setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';')));
 
         MockHttpServletRequest next = new MockHttpServletRequest("GET", "/securetest/api/v1/me");
         next.setCookies(session);
-        SecureTestPrincipal p = oidc.principal(next);
+        SecureTestPrincipal p = oidc.principal(new ServletGateRequest(next));
         assertThat(p.name()).isEqualTo("alice");
         assertThat(p.roles()).containsExactly(Role.SECURITY);
 
         // state is single-use
-        MockHttpServletResponse replay = new MockHttpServletResponse();
-        assertThat(oidc.callback(cb, replay, "/securetest").success()).isFalse();
-        assertThat(replay.getStatus()).isEqualTo(400);
+        GateResponse replay = new GateResponse();
+        assertThat(oidc.callback(new ServletGateRequest(cb), replay, "/securetest").success()).isFalse();
+        assertThat(replay.status()).isEqualTo(400);
     }
 
     @Test
     void rejectsWrongAudienceAndUnmappedUsers() throws Exception {
         OidcAuthenticator oidc = authenticator();
-        MockHttpServletResponse redirect = new MockHttpServletResponse();
-        oidc.startLogin(new MockHttpServletRequest("GET", "/securetest/oidc/login"), redirect, "/securetest");
-        Map<String, String> q = query(redirect.getRedirectedUrl());
+        GateResponse redirect = new GateResponse();
+        oidc.startLogin(new ServletGateRequest(new MockHttpServletRequest("GET", "/securetest/oidc/login")), redirect, "/securetest");
+        Map<String, String> q = query(redirect.headers().get("Location"));
         nonce.set(q.get("nonce"));
         audience = "some-other-client";
         MockHttpServletRequest cb = new MockHttpServletRequest("GET", "/securetest/oidc/callback");
         cb.setParameter("state", q.get("state"));
         cb.setParameter("code", "abc");
-        MockHttpServletResponse res = new MockHttpServletResponse();
-        OidcAuthenticator.LoginResult r = oidc.callback(cb, res, "/securetest");
+        GateResponse res = new GateResponse();
+        OidcAuthenticator.LoginResult r = oidc.callback(new ServletGateRequest(cb), res, "/securetest");
         assertThat(r.success()).isFalse();
         assertThat(r.message()).contains("not issued for this client");
-        assertThat(res.getCookie(OidcAuthenticator.COOKIE)).isNull();
+        assertThat(res.cookies()).isEmpty();
     }
 
     @Test
@@ -168,7 +170,7 @@ class OidcAuthenticatorTest {
                 .getBytes(StandardCharsets.UTF_8)) + "." + parts[2];
         MockHttpServletRequest req = new MockHttpServletRequest();
         req.setCookies(new Cookie(OidcAuthenticator.COOKIE, "made-up-session"));
-        assertThat(oidc.principal(req)).isNull();
+        assertThat(oidc.principal(new ServletGateRequest(req))).isNull();
         try {
             var m = OidcAuthenticator.class.getDeclaredMethod("verify", String.class, String.class);
             m.setAccessible(true);

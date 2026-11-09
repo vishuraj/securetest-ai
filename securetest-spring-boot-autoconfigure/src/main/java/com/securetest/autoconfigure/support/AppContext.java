@@ -57,7 +57,8 @@ public class AppContext implements ApplicationListener<WebServerInitializedEvent
     }
 
     public String contextPath() {
-        return env.getProperty("server.servlet.context-path", "");
+        String servlet = env.getProperty("server.servlet.context-path");
+        return servlet != null ? servlet : env.getProperty("spring.webflux.base-path", "");
     }
 
     public String selfBaseUrl() {

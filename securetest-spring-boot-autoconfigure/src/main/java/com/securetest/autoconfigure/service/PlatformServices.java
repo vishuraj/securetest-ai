@@ -57,8 +57,8 @@ public final class PlatformServices {
             out.add(new Check("Spring Boot", level, "Spring Boot " + boot + ("OK".equals(level) ? " (tested 3.2–3.5)"
                     : "WARN".equals(level) ? " is newer than the tested 3.x line; core features are expected to work" : " is not supported by this starter line")));
             out.add(new Check("Spring Framework", "OK", "Spring Framework " + SpringVersion.getVersion()));
-            out.add(new Check("Servlet namespace", ClassUtils.isPresent("jakarta.servlet.Servlet", null) ? "OK" : "ERROR",
-                    ClassUtils.isPresent("jakarta.servlet.Servlet", null) ? "jakarta.servlet" : "javax.servlet only: use the legacy starter line or external analysis"));
+            boolean servlet = ClassUtils.isPresent("jakarta.servlet.Servlet", null) && ClassUtils.isPresent("org.springframework.web.servlet.DispatcherServlet", null);
+            out.add(new Check("Web stack", "OK", servlet ? "Spring MVC (jakarta.servlet)" : "Spring WebFlux (reactive)"));
             out.add(new Check("Actuator", ClassUtils.isPresent("org.springframework.boot.actuate.health.HealthEndpoint", null) ? "OK" : "INFO",
                     ClassUtils.isPresent("org.springframework.boot.actuate.health.HealthEndpoint", null) ? "Health indicators bridged (status only)"
                             : "Not present: JVM metrics only. Add spring-boot-starter-actuator for health indicators."));
@@ -66,8 +66,11 @@ public final class PlatformServices {
                     ClassUtils.isPresent("io.micrometer.core.instrument.MeterRegistry", null) ? "Custom meters visible" : "Not present"));
             out.add(new Check("Source workspace", app.sourceRoot().isPresent() ? "OK" : "WARN",
                     app.sourceRoot().map(Object::toString).orElse("Not configured: source-based modules (code quality, secrets, IaC, migration) are unavailable")));
-            out.add(new Check("Dashboard exposure", props.getDashboard().getBindAddress().startsWith("127.") || props.getDashboard().getBindAddress().equals("::1") ? "OK" : "WARN",
-                    "bind-address=" + props.getDashboard().getBindAddress() + ", authentication=" + props.getDashboard().getAuthentication().getProvider()));
+            var auth = props.getDashboard().getAuthentication();
+            boolean open = !auth.isEnabled() && !"127.0.0.1".equals(props.getDashboard().getBindAddress());
+            out.add(new Check("Dashboard access", open ? "WARN" : "OK",
+                    "bind-address=" + props.getDashboard().getBindAddress() + ", authentication=" + (auth.isEnabled() ? auth.getProvider() : "disabled")
+                            + (open ? " (authentication disabled: only same-machine, non-production requests are served)" : "")));
             if (app.productionLike()) out.add(new Check("Production profile", "WARN", "Production-like profile active: source changes are disabled; keep the dashboard protected."));
             return out;
         }

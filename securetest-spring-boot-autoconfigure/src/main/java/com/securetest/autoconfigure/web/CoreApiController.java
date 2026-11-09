@@ -35,9 +35,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.method.HandlerMethod;
-import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
-import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.lang.reflect.Parameter;
 import java.time.Instant;
@@ -89,8 +86,8 @@ public class CoreApiController {
     }
 
     @GetMapping("/me")
-    public Map<String, Object> me() {
-        SecureTestPrincipal p = Authz.current();
+    public Map<String, Object> me(SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, null);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", p.name());
         m.put("roles", p.roles());
@@ -108,8 +105,8 @@ public class CoreApiController {
     }
 
     @GetMapping("/overview")
-    public Map<String, Object> overview() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> overview(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("application", app.info());
         m.put("sourceRoot", app.sourceRoot().map(Object::toString).orElse(null));
@@ -122,14 +119,14 @@ public class CoreApiController {
         m.put("compatibility", compatibility.checks().stream().filter(c -> !c.level().equals("OK")).toList());
         m.put("alerts", telemetry.alerts());
         m.put("notifications", notifications.recent().stream().limit(10).toList());
-        m.put("gate", gate());
+        m.put("gate", gate(principal));
         m.put("awaitingApproval", jobs.all().stream().filter(j -> j.status == JobStatus.AWAITING_APPROVAL).count());
         return m;
     }
 
     @GetMapping("/health")
-    public Map<String, Object> health() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> health(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<String, Object> self = new LinkedHashMap<>();
         self.put("status", "UP");
         self.put("storageWritable", store.writable());
@@ -140,8 +137,8 @@ public class CoreApiController {
     }
 
     @GetMapping("/metrics")
-    public Map<String, Object> metrics(@RequestParam(defaultValue = "false") boolean history) {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> metrics(@RequestParam(defaultValue = "false") boolean history, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<String, Object> m = new LinkedHashMap<>(telemetry.snapshot(true));
         m.put("samplingEnabled", modules.isEnabled(ModuleCatalog.METRICS));
         if (history) m.put("history", telemetry.history());
@@ -150,37 +147,37 @@ public class CoreApiController {
     }
 
     @GetMapping(value = "/metrics/prometheus", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String prometheus() {
-        Authz.require(Permission.VIEW);
+    public String prometheus(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         if (!modules.isEnabled(ModuleCatalog.METRICS)) throw ApiException.conflict("Enable the Runtime Metrics module to export metrics.");
         return telemetry.prometheus();
     }
 
     @GetMapping("/compatibility")
-    public Map<String, Object> compatibility() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> compatibility(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return Map.of("checks", compatibility.checks(), "tools", compatibility.tools());
     }
 
     // ------------------------------------------------------------------ modules
 
     @GetMapping("/modules")
-    public List<Map<String, Object>> modules() {
-        Authz.require(Permission.VIEW);
+    public List<Map<String, Object>> modules(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return moduleViews();
     }
 
     public record ModuleUpdate(Boolean enabled, Map<String, String> settings) { }
 
     @PutMapping("/modules/{moduleId}/configuration")
-    public Map<String, Object> updateModule(@PathVariable String moduleId, @RequestBody ModuleUpdate body) {
-        SecureTestPrincipal p = Authz.require(Permission.CONFIGURE);
+    public Map<String, Object> updateModule(@PathVariable String moduleId, @RequestBody ModuleUpdate body, SecureTestPrincipal principal) {
+        SecureTestPrincipal p = Authz.require(principal, Permission.CONFIGURE);
         boolean before = modules.isEnabled(moduleId);
         ModuleService.Toggle t = modules.set(moduleId, body.enabled(), body.settings(), p.name());
         boolean after = modules.isEnabled(moduleId);
         if (before && !after) jobs.onModuleDisabled(moduleId, p);
         telemetry.reconcile();
-        audit.record(p.name(), p.remoteAddress(), "module.configured", moduleId, "OK",
+        audit.record(p, "module.configured", moduleId, "OK",
                 Map.of("enabled", before + " -> " + after, "version", String.valueOf(t.version)));
         return moduleView(ModuleCatalog.find(moduleId).orElseThrow());
     }
@@ -228,8 +225,8 @@ public class CoreApiController {
     // ------------------------------------------------------------------ scanners
 
     @GetMapping("/scanners")
-    public List<Map<String, Object>> scanners(@RequestParam(required = false) String module) {
-        Authz.require(Permission.VIEW);
+    public List<Map<String, Object>> scanners(@RequestParam(required = false) String module, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         List<Map<String, Object>> out = new ArrayList<>();
         for (ScannerDescriptor d : registry.descriptors(module)) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -242,16 +239,16 @@ public class CoreApiController {
     }
 
     @PostMapping("/scanners/{scannerId}/preflight")
-    public List<PreflightCheck> preflight(@PathVariable String scannerId, @RequestBody(required = false) Map<String, String> options) {
-        Authz.require(Permission.EXECUTE);
+    public List<PreflightCheck> preflight(@PathVariable String scannerId, @RequestBody(required = false) Map<String, String> options, SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.EXECUTE);
         return jobs.preflight(scannerId, options == null ? Map.of() : options);
     }
 
     // ------------------------------------------------------------------ settings, gate, notifications
 
     @GetMapping("/settings")
-    public Map<String, Object> settings() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> settings(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("mode", props.getMode());
         var d = props.getDashboard();
@@ -303,8 +300,8 @@ public class CoreApiController {
 
     /** CI/CD release gate: GET returns PASS/FAIL against policy thresholds. */
     @GetMapping("/gate")
-    public Map<String, Object> gate() {
-        Authz.require(Permission.VIEW);
+    public Map<String, Object> gate(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<Severity, Integer> open = findings.openCounts(null);
         int crit = open.getOrDefault(Severity.CRITICAL, 0);
         int high = open.getOrDefault(Severity.HIGH, 0);
@@ -321,44 +318,36 @@ public class CoreApiController {
     }
 
     @GetMapping("/notifications")
-    public List<NotificationService.Notice> notifications() {
-        Authz.require(Permission.VIEW);
+    public List<NotificationService.Notice> notifications(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         return notifications.recent();
     }
 
     // ------------------------------------------------------------------ OpenAPI for this API
 
     @GetMapping("/openapi.json")
-    public Map<String, Object> openapi() {
-        Authz.require(Permission.VIEW);
-        RequestMappingHandlerMapping mapping = context.getBean("requestMappingHandlerMapping", RequestMappingHandlerMapping.class);
+    public Map<String, Object> openapi(SecureTestPrincipal principal) {
+        Authz.require(principal, Permission.VIEW);
         Map<String, Object> paths = new TreeMap<>();
-        for (Map.Entry<RequestMappingInfo, HandlerMethod> e : mapping.getHandlerMethods().entrySet()) {
-            HandlerMethod hm = e.getValue();
-            if (!hm.getBeanType().getPackageName().startsWith("com.securetest")) continue;
-            for (String path : e.getKey().getPatternValues()) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> item = (Map<String, Object>) paths.computeIfAbsent(path, k -> new LinkedHashMap<>());
-                Set<org.springframework.web.bind.annotation.RequestMethod> methods = e.getKey().getMethodsCondition().getMethods();
-                for (var method : methods) {
-                    Map<String, Object> op = new LinkedHashMap<>();
-                    op.put("operationId", hm.getMethod().getName());
-                    op.put("summary", humanize(hm.getMethod().getName()));
-                    op.put("tags", List.of(hm.getBeanType().getSimpleName().replace("ApiController", "")));
-                    List<Map<String, Object>> params = new ArrayList<>();
-                    for (Parameter prm : hm.getMethod().getParameters()) {
-                        var pv = prm.getAnnotation(PathVariable.class);
-                        var rp = prm.getAnnotation(RequestParam.class);
-                        if (pv != null) params.add(Map.of("name", prm.getName(), "in", "path", "required", true, "schema", Map.of("type", "string")));
-                        if (rp != null) params.add(Map.of("name", rp.value().isEmpty() ? prm.getName() : rp.value(), "in", "query", "required", rp.required(), "schema", Map.of("type", "string")));
-                        if (prm.getAnnotation(RequestBody.class) != null) op.put("requestBody", Map.of("content", Map.of("application/json", Map.of("schema", Map.of("type", "object")))));
-                    }
-                    if (!params.isEmpty()) op.put("parameters", params);
-                    op.put("responses", Map.of("200", Map.of("description", "OK"), "401", Map.of("description", "Unauthenticated"),
-                            "403", Map.of("description", "Forbidden / CSRF header missing"), "422", Map.of("description", "Validation or preflight failure")));
-                    item.put(method.name().toLowerCase(), op);
-                }
+        for (EndpointCatalog.Endpoint e : context.getBean(EndpointCatalog.class).endpoints()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> item = (Map<String, Object>) paths.computeIfAbsent(e.path(), k -> new LinkedHashMap<>());
+            Map<String, Object> op = new LinkedHashMap<>();
+            op.put("operationId", e.method().getName());
+            op.put("summary", humanize(e.method().getName()));
+            op.put("tags", List.of(e.beanType().getSimpleName().replace("ApiController", "")));
+            List<Map<String, Object>> params = new ArrayList<>();
+            for (Parameter prm : e.method().getParameters()) {
+                var pv = prm.getAnnotation(PathVariable.class);
+                var rp = prm.getAnnotation(RequestParam.class);
+                if (pv != null) params.add(Map.of("name", prm.getName(), "in", "path", "required", true, "schema", Map.of("type", "string")));
+                if (rp != null) params.add(Map.of("name", rp.value().isEmpty() ? prm.getName() : rp.value(), "in", "query", "required", rp.required(), "schema", Map.of("type", "string")));
+                if (prm.getAnnotation(RequestBody.class) != null) op.put("requestBody", Map.of("content", Map.of("application/json", Map.of("schema", Map.of("type", "object")))));
             }
+            if (!params.isEmpty()) op.put("parameters", params);
+            op.put("responses", Map.of("200", Map.of("description", "OK"), "401", Map.of("description", "Unauthenticated"),
+                    "403", Map.of("description", "Forbidden / CSRF header missing"), "422", Map.of("description", "Validation or preflight failure")));
+            item.put(e.httpMethod().toLowerCase(), op);
         }
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("openapi", "3.0.3");

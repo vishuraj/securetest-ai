@@ -1,31 +1,20 @@
 package com.securetest.autoconfigure.security;
 
 import com.securetest.autoconfigure.security.Rbac.Permission;
-import org.springframework.web.context.request.RequestAttributes;
-import org.springframework.web.context.request.RequestContextHolder;
 
 /** Server-side authorization checks used by every controller method. */
 public final class Authz {
     private Authz() { }
 
-    public static SecureTestPrincipal current() {
-        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
-        Object p = attrs == null ? null : attrs.getAttribute(SecureTestPrincipal.REQUEST_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
-        if (p instanceof SecureTestPrincipal principal) return principal;
-        throw new ApiException(401, "unauthenticated", "Authentication required");
-    }
-
-    public static SecureTestPrincipal require(Permission permission) {
-        SecureTestPrincipal p = current();
-        if (!p.has(permission)) {
-            throw ApiException.forbidden("Permission " + permission + " is required (your roles: " + p.roles() + ")");
+    /**
+     * @param principal resolved by the web-stack argument resolver (never trusted from the client)
+     * @param permission required permission, or {@code null} to require only an authenticated user
+     */
+    public static SecureTestPrincipal require(SecureTestPrincipal principal, Permission permission) {
+        if (principal == null) throw new ApiException(401, "unauthenticated", "Authentication required");
+        if (permission != null && !principal.has(permission)) {
+            throw ApiException.forbidden("Permission " + permission + " is required (your roles: " + principal.roles() + ")");
         }
-        return p;
-    }
-
-    public static String correlationId() {
-        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
-        Object c = attrs == null ? null : attrs.getAttribute(SecureTestSecurityFilter.CORRELATION_ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
-        return c == null ? null : c.toString();
+        return principal;
     }
 }
