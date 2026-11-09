@@ -33,8 +33,10 @@ Requirements: Java 17+ and Spring Boot 3.2–3.5 (servlet stack). Spring Boot 4 
 
 ## Build and try it
 
+No Maven installation needed: the Maven Wrapper downloads Maven 3.9.16 on first use (`mvnw.cmd` on Windows, `./mvnw` elsewhere).
+
 ```bash
-mvn install
+./mvnw install
 java -jar securetest-sample-app/target/securetest-sample-app-1.0.0.jar --securetest.workspace.source-root=securetest-sample-app
 ```
 
