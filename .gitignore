@@ -1,0 +1,19 @@
+target/
+build/
+.idea/
+*.iml
+.vscode/
+.securetest/
+*.log
+.env
+
+# local / secrets
+.claude/
+application-local.yml
+application-local.properties
+*.pem
+*.key
+*.p12
+*.jks
+*.pfx
+!securetest-control-plane/deploy/.env.example

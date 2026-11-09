@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.github.vishuraj</groupId>
+        <artifactId>securetest-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>securetest-worker</artifactId>
+    <name>SecureTest AI :: Remote Worker</name>
+    <description>Pulls scan jobs from the control plane, runs the securetest-adapters scanners in a sandbox
+        (container by default) and posts normalized findings back.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.vishuraj</groupId>
+            <artifactId>securetest-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.vishuraj</groupId>
+            <artifactId>securetest-adapters</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <classifier>exec</classifier>
+                    <mainClass>com.securetest.worker.WorkerApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

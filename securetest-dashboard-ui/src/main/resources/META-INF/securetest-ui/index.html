@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>SecureTest AI</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="layout">
+    <header class="topbar" role="banner">
+      <button class="icon-btn nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar">☰</button>
+      <a class="brand" href="#/overview" aria-label="SecureTest AI home">
+        <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.6 12 15 6.9-1.4 12-7.5 12-15V7L16 2z" fill="var(--accent)"/><path d="m11 16 3.5 3.5L21.5 12" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>SecureTest <b>AI</b></span>
+      </a>
+      <div class="topbar-app" id="appIdentity" aria-live="polite"></div>
+      <div class="spacer"></div>
+      <div class="gate-pill" id="gatePill" hidden></div>
+      <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode" title="Toggle theme">◐</button>
+      <div class="user" id="userBox"></div>
+    </header>
+    <nav class="sidebar" id="sidebar" aria-label="Modules">
+      <ul id="navList"></ul>
+    </nav>
+    <main id="main" tabindex="-1">
+      <div id="banner"></div>
+      <div id="view" class="view"><p class="muted">Loading…</p></div>
+    </main>
+  </div>
+  <div id="modalRoot"></div>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <script src="js/core.js"></script>
+  <script src="js/pages.js"></script>
+  <script src="js/pages2.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

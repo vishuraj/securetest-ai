@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: securetest-demo
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always   # deliberate: flagged by the Configuration posture check
+
+# Nothing below is required: the dashboard works with zero configuration at http://localhost:8080/securetest
+# These settings only make the demo richer.
+securetest:
+  security:
+    # let the demo apply rule-based fixes to its own sources (diff + backup + undo); default is false
+    allow-auto-remediation: true
+  modules:
+    performance:
+      # demo only: allow the built-in load generator to run inside this JVM against itself
+      allow-embedded-load-generation: true
+      max-concurrency: 20

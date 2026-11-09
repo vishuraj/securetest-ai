@@ -1,0 +1,2 @@
+com.securetest.autoconfigure.SecureTestAutoConfiguration
+com.securetest.autoconfigure.SecureTestCompatibilityAutoConfiguration

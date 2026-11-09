@@ -1,0 +1,37 @@
+# Minimal control plane stack: PostgreSQL + control plane. OIDC comes from your identity provider.
+# Usage: copy .env.example to .env, fill it in, then `docker compose up -d`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: securetest
+      POSTGRES_USER: securetest
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securetest -d securetest"]
+      interval: 5s
+      retries: 20
+
+  control-plane:
+    image: securetest/control-plane:1.0.0
+    build: ..
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/securetest
+      SPRING_DATASOURCE_USERNAME: securetest
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${OIDC_ISSUER_URI:?set OIDC_ISSUER_URI}
+      SECURETEST_CONTROL_PLANE_SECURITY_TENANT_CLAIM: ${OIDC_TENANT_CLAIM:-tenant}
+      SECURETEST_CONTROL_PLANE_SECURITY_ROLES_CLAIM: ${OIDC_ROLES_CLAIM:-roles}
+      SECURETEST_CONTROL_PLANE_WORKERS_TOKENS: ${WORKER_TOKEN:?set WORKER_TOKEN}
+      SECURETEST_CONTROL_PLANE_BOOTSTRAP_TENANT_SLUG: ${BOOTSTRAP_TENANT:-default}
+      SECURETEST_CONTROL_PLANE_BOOTSTRAP_ENROLLMENT_TOKEN: ${BOOTSTRAP_ENROLLMENT_TOKEN:?set BOOTSTRAP_ENROLLMENT_TOKEN}
+
+volumes:
+  pgdata:

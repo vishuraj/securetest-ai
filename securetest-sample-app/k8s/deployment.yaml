@@ -1,0 +1,23 @@
+# DELIBERATELY insecure demo manifest for the Kubernetes checks
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: securetest-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: securetest-demo
+  template:
+    metadata:
+      labels:
+        app: securetest-demo
+    spec:
+      containers:
+        - name: app
+          image: example/securetest-demo:latest
+          ports:
+            - containerPort: 8080
+          securityContext:
+            privileged: true
+            allowPrivilegeEscalation: true
