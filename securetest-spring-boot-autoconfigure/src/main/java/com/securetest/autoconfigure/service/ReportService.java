@@ -71,7 +71,12 @@ public class ReportService {
         public String checksum;
     }
 
-    public record Request(String type, String title, List<String> modules, String minPriority, boolean includeClosed, String migrationId) { }
+    // Boxed so a missing JSON field means false on every Jackson version (Jackson 3 rejects null for primitives).
+    public record Request(String type, String title, List<String> modules, String minPriority, Boolean includeClosed, String migrationId) {
+        public Request {
+            includeClosed = Boolean.TRUE.equals(includeClosed);
+        }
+    }
 
     private final SecureTestProperties props;
     private final AppContext app;
@@ -203,7 +208,7 @@ public class ReportService {
         d.metadata.put("Application version", String.valueOf(info.version()));
         d.metadata.put("Runtime", "Java " + info.javaVersion() + " (" + info.javaVendor() + "), Spring Boot " + info.springBootVersion());
         d.metadata.put("Build tool", info.buildTool());
-        d.metadata.put("SecureTest version", "1.0.0");
+        d.metadata.put("SecureTest version", "1.0.1");
         d.metadata.put("Time zone", d.zone.getId());
 
         List<ScanJob> scans = jobs.all().stream().filter(j -> scope.isEmpty() || scope.contains(j.moduleId))

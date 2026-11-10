@@ -3,8 +3,6 @@ package com.securetest.autoconfigure.support;
 import com.securetest.autoconfigure.SecureTestProperties;
 import com.securetest.core.spi.ApplicationInfo;
 import org.springframework.boot.SpringBootVersion;
-import org.springframework.boot.web.context.WebServerInitializedEvent;
-import org.springframework.context.ApplicationListener;
 import org.springframework.core.SpringVersion;
 import org.springframework.core.env.Environment;
 
@@ -19,12 +17,11 @@ import java.util.Locale;
 import java.util.Optional;
 
 /** Identity of the host application, its port and its source workspace. */
-public class AppContext implements ApplicationListener<WebServerInitializedEvent> {
+public class AppContext {
 
     private final Environment env;
     private final SecureTestProperties props;
     private final String version;
-    private volatile Integer port;
 
     public AppContext(Environment env, SecureTestProperties props, String buildVersion) {
         this.env = env;
@@ -32,10 +29,13 @@ public class AppContext implements ApplicationListener<WebServerInitializedEvent
         this.version = buildVersion;
     }
 
-    @Override
-    public void onApplicationEvent(WebServerInitializedEvent event) {
-        String ns = event.getApplicationContext().getServerNamespace();
-        if (ns == null || ns.isEmpty()) port = event.getWebServer().getPort();
+    /**
+     * The port the application's web server is listening on. Spring Boot (3.x and 4.x) publishes it as
+     * {@code local.server.port} once the server has started; before that the configured port is used.
+     */
+    public Integer port() {
+        Integer running = env.getProperty("local.server.port", Integer.class);
+        return running != null ? running : env.getProperty("server.port", Integer.class, 8080);
     }
 
     public List<String> profiles() {
@@ -62,7 +62,7 @@ public class AppContext implements ApplicationListener<WebServerInitializedEvent
     }
 
     public String selfBaseUrl() {
-        int p = port != null ? port : env.getProperty("server.port", Integer.class, 8080);
+        int p = port();
         boolean ssl = env.getProperty("server.ssl.enabled", Boolean.class, false);
         return (ssl ? "https" : "http") + "://localhost:" + p + contextPath();
     }
@@ -107,7 +107,7 @@ public class AppContext implements ApplicationListener<WebServerInitializedEvent
                 SpringVersion.getVersion(),
                 buildTool(),
                 host,
-                port,
+                env.getProperty("local.server.port", Integer.class),
                 contextPath(),
                 Instant.ofEpochMilli(ManagementFactory.getRuntimeMXBean().getStartTime()));
     }

@@ -104,7 +104,7 @@ class RemoteScanEndToEndTest {
         });
         List<Map<String, Object>> agents = (List<Map<String, Object>>) app.get("agents");
         assertThat(agents).hasSize(1);
-        assertThat(agents.get(0)).containsEntry("agentVersion", "1.0.0");
+        assertThat(agents.get(0)).containsEntry("agentVersion", "1.0.1");
         assertThat((String) agents.get(0).get("capabilitiesJson")).contains("\"api-security\""); // starter sends module ids
         String applicationId = (String) app.get("id");
 

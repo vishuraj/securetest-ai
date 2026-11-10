@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class JobRunner implements SmartLifecycle {
 
     private static final Logger log = LoggerFactory.getLogger(JobRunner.class);
-    public static final String VERSION = "1.0.0";
+    public static final String VERSION = "1.0.1";
 
     private final WorkerProperties props;
     private final WorkerScanners.Catalog catalog;

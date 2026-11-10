@@ -92,13 +92,14 @@ public class GovernanceApiController {
         return migrations.matrix();
     }
 
-    public record AssessRequest(int javaVersion, String springBootVersion) { }
+    public record AssessRequest(Integer javaVersion, String springBootVersion) { }
 
     @PostMapping("/migrations/assess")
     public MigrationRun assess(@RequestBody AssessRequest req, SecureTestPrincipal principal) {
         SecureTestPrincipal p = Authz.require(principal, Permission.EXECUTE);
         requireMigrationModule();
         if (req.springBootVersion() == null) throw ApiException.badRequest("springBootVersion is required");
+        if (req.javaVersion() == null) throw ApiException.badRequest("javaVersion is required");
         return migrations.assess(req.javaVersion(), req.springBootVersion(), p);
     }
 
@@ -146,7 +147,12 @@ public class GovernanceApiController {
         return m;
     }
 
-    public record Applicability(String framework, String controlId, boolean notApplicable, String reason) { }
+    // Boxed so a missing JSON field means false on every Jackson version (Jackson 3 rejects null for primitives).
+    public record Applicability(String framework, String controlId, Boolean notApplicable, String reason) {
+        public Applicability {
+            notApplicable = Boolean.TRUE.equals(notApplicable);
+        }
+    }
 
     @PutMapping("/compliance/applicability")
     public Map<String, Object> applicability(@RequestBody Applicability req, SecureTestPrincipal principal) {

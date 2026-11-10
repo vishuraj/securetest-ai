@@ -75,13 +75,6 @@ public class ReactiveWebConfiguration {
     @Bean
     WebFluxConfigurer secureTestWebFlux(SecureTestProperties props) {
         String path = props.normalizedPath();
-        AtomicInteger seq = new AtomicInteger();
-        // SecureTest's API does blocking work (files, scanners, HTTP preflights): run it on its own threads, never on the event loop
-        TaskExecutorAdapter blocking = new TaskExecutorAdapter(Executors.newFixedThreadPool(8, r -> {
-            Thread t = new Thread(r, "securetest-api-" + seq.incrementAndGet());
-            t.setDaemon(true);
-            return t;
-        }));
         return new WebFluxConfigurer() {
             @Override
             public void addResourceHandlers(ResourceHandlerRegistry registry) {
@@ -103,13 +96,34 @@ public class ReactiveWebConfiguration {
                     }
                 });
             }
-
-            @Override
-            public void configureBlockingExecution(BlockingExecutionConfigurer configurer) {
-                configurer.setExecutor(blocking);
-                configurer.setControllerMethodPredicate(m -> m.getBeanType().getPackageName().startsWith("com.securetest.autoconfigure"));
-            }
         };
+    }
+
+    /**
+     * SecureTest's API does blocking work (files, scanners, HTTP preflights): on Spring Framework 6.1+ (Boot 3.2+) it runs on
+     * its own threads, never on the event loop. Spring Framework 6.0 (Boot 3.0/3.1) has no such hook; there the gate and
+     * most handlers still run on Reactor's bounded-elastic threads (see {@link ReactiveGateFilter}).
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.web.reactive.config.BlockingExecutionConfigurer")
+    static class BlockingExecution {
+
+        @Bean
+        WebFluxConfigurer secureTestBlockingExecution() {
+            AtomicInteger seq = new AtomicInteger();
+            TaskExecutorAdapter blocking = new TaskExecutorAdapter(Executors.newFixedThreadPool(8, r -> {
+                Thread t = new Thread(r, "securetest-api-" + seq.incrementAndGet());
+                t.setDaemon(true);
+                return t;
+            }));
+            return new WebFluxConfigurer() {
+                @Override
+                public void configureBlockingExecution(BlockingExecutionConfigurer configurer) {
+                    configurer.setExecutor(blocking);
+                    configurer.setControllerMethodPredicate(m -> m.getBeanType().getPackageName().startsWith("com.securetest.autoconfigure"));
+                }
+            };
+        }
     }
 
     @Bean

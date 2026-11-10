@@ -7,7 +7,7 @@
     <!-- Deliberately has no parent so consumers importing the BOM inherit nothing else (e.g. Spring Boot's versions). -->
     <groupId>io.github.vishuraj</groupId>
     <artifactId>securetest-bom</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>pom</packaging>
     <name>SecureTest AI :: BOM</name>
     <description>Version alignment for SecureTest modules.</description>
@@ -41,14 +41,14 @@
     <!-- Only the published libraries; the control plane and worker ship as container images. -->
     <dependencyManagement>
         <dependencies>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-core</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-reporting</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-adapters</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-migration-engine</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-ai</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-dashboard-ui</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-spring-boot-autoconfigure</artifactId><version>1.0.0</version></dependency>
-            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-spring-boot-starter</artifactId><version>1.0.0</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-core</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-reporting</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-adapters</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-migration-engine</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-ai</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-dashboard-ui</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-spring-boot-autoconfigure</artifactId><version>1.0.1</version></dependency>
+            <dependency><groupId>io.github.vishuraj</groupId><artifactId>securetest-spring-boot-starter</artifactId><version>1.0.1</version></dependency>
         </dependencies>
     </dependencyManagement>
 

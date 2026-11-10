@@ -18,6 +18,7 @@ mvn -pl securetest-sample-app spring-boot:run   # dashboard at http://localhost:
 * New scanners implement `com.securetest.core.spi.Scanner` and must respect the target allowlist,
   confirmation/approval rules and redaction (see the security model in the README).
 * Optional features must stay **off by default**.
-* CI (`.github/workflows/build.yml`) must pass on Java 17 and 21.
+* Open pull requests against `develop`. CI (`.github/workflows/build.yml`) must pass on Java 17 and 21 and on every
+  Spring Boot line in the compatibility matrix (`compatibility/run-matrix.sh` runs it locally).
 
 By contributing you agree that your contributions are licensed under the Apache License 2.0.

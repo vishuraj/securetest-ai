@@ -51,11 +51,12 @@ public final class PlatformServices {
             String boot = SpringBootVersion.getVersion();
             String level;
             if (boot == null) level = "WARN";
-            else if (MavenVersion.major(boot) == 3 && MavenVersion.minor(boot) >= 2) level = "OK";
+            else if (MavenVersion.major(boot) == 3 || MavenVersion.major(boot) == 4 && MavenVersion.minor(boot) <= 1) level = "OK";
             else if (MavenVersion.major(boot) >= 4) level = "WARN";
             else level = "ERROR";
-            out.add(new Check("Spring Boot", level, "Spring Boot " + boot + ("OK".equals(level) ? " (tested 3.2–3.5)"
-                    : "WARN".equals(level) ? " is newer than the tested 3.x line; core features are expected to work" : " is not supported by this starter line")));
+            out.add(new Check("Spring Boot", level, "Spring Boot " + boot + ("OK".equals(level) ? " (tested 3.0–4.1, Spring MVC and WebFlux)"
+                    : "WARN".equals(level) ? " is newer than the tested 3.0–4.1 range; core features are expected to work"
+                    : " is not supported: SecureTest needs Spring Boot 3.0+ (jakarta.*)")));
             out.add(new Check("Spring Framework", "OK", "Spring Framework " + SpringVersion.getVersion()));
             boolean servlet = ClassUtils.isPresent("jakarta.servlet.Servlet", null) && ClassUtils.isPresent("org.springframework.web.servlet.DispatcherServlet", null);
             out.add(new Check("Web stack", "OK", servlet ? "Spring MVC (jakarta.servlet)" : "Spring WebFlux (reactive)"));
@@ -129,7 +130,7 @@ public final class PlatformServices {
                 body.put("environment", info.environment());
                 body.put("version", info.version());
                 body.put("runtime", Map.of("java", info.javaVersion(), "springBoot", info.springBootVersion()));
-                body.put("agentVersion", "1.0.0");
+                body.put("agentVersion", "1.0.1");
                 body.put("capabilities", capabilities);
                 HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(props.getControlPlane().getUrl().replaceAll("/$", "") + "/api/v1/agents/register"))
                         .timeout(Duration.ofSeconds(10)).header("Content-Type", "application/json")
