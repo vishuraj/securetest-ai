@@ -91,7 +91,7 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.AttackSurfaceController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.AssistantController.class, com.securetest.autoconfigure.web.AttackSurfaceController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
         SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
@@ -221,6 +221,7 @@ public class SecureTestAutoConfiguration {
     DependencyUpgradeFix secureTestDependencyUpgradeFix() { return new DependencyUpgradeFix(); }
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(com.securetest.ai.AiRemediator.class)
     com.securetest.ai.AiRemediator secureTestAiRemediator(SecureTestProperties props, SecretResolver secrets) {
         SecureTestProperties.Ai ai = props.getAi();
         com.securetest.ai.ModelClient client = null;

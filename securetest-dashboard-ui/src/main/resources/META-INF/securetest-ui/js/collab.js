@@ -25,6 +25,10 @@ function collabCards(f) {
   ];
 }
 
+function assistantButton(f) {
+  return aiEnabled() ? el('button', { class: 'btn', onclick: () => go('#/assistant?finding=' + encodeURIComponent(f.id)) }, '✦ Ask the assistant') : null;
+}
+
 function retestCard(f) {
   const v = f.verification;
   const manual = f.source === 'manual';
@@ -50,7 +54,7 @@ function retestCard(f) {
         if (r) { toast(r.mode === 'scan' ? 'Retest scan started' : 'Retest requested', 'ok'); ST.route(); }
       } }, 'Retest'),
       el('button', { class: 'btn', disabled: !can('EXECUTE') || null, onclick: verdict(true) }, 'Mark verified fixed'),
-      el('button', { class: 'btn', disabled: !can('EXECUTE') || null, onclick: verdict(false) }, 'Still present'))
+      el('button', { class: 'btn', disabled: !can('EXECUTE') || null, onclick: verdict(false) }, 'Still present'), assistantButton(f))
   ]);
   return card('Retest', box);
 }

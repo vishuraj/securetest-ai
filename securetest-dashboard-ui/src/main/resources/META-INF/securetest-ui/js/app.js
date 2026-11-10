@@ -7,6 +7,7 @@ const NAV = [
   { hash: '#/overview', label: 'Overview' },
   { hash: '#/findings', label: 'Findings', count: true },
   { hash: '#/scans', label: 'Scans' },
+  { hash: '#/assistant', label: '✦ Security assistant', ai: true },
   { sep: 'Modules' },
   ...['health', 'metrics', 'testing', 'code-quality', 'vulnerability', 'api-security', 'performance', 'compliance', 'network-security', 'advanced-security', 'cloud-security', 'migration', 'pentest', 'attack-surface', 'ai-security']
     .map(id => ({ module: id, hash: '#/module/' + id })),
@@ -28,6 +29,7 @@ function renderNav() {
   clear(list);
   NAV.forEach(item => {
     if (item.fleet && !ST.fleet.enabled()) return; // monolith: no combined view
+    if (item.ai && !aiEnabled()) return; // AI is opt-in
     if (item.sep) { list.appendChild(el('li', { class: 'sep', 'aria-hidden': 'true' }, item.sep)); return; }
     const m = item.module ? ST.modules.find(x => x.id === item.module) : null;
     const label = m ? m.name : item.label;

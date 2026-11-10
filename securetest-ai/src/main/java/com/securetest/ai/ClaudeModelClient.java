@@ -74,6 +74,44 @@ public class ClaudeModelClient implements ModelClient {
         }
     }
 
+    /** Multi-turn text conversation for the security assistant (thinking is always on for Opus 5.5; depth set by effort). */
+    @Override
+    public ChatReply chat(String system, java.util.List<Turn> turns) {
+        MessageCreateParams.Builder b = MessageCreateParams.builder()
+                .model(model)
+                .maxTokens(8000L)
+                .system(system)
+                .outputConfig(OutputConfig.builder().effort(effort).build());
+        for (Turn t : turns) {
+            if ("assistant".equals(t.role())) b.addAssistantMessage(t.text()); else b.addUserMessage(t.text());
+        }
+        if (refusalFallback) {
+            b.putAdditionalHeader("anthropic-beta", "server-side-fallback-2026-07-01");
+            b.putAdditionalBodyProperty("fallbacks", JsonValue.from("default"));
+        }
+        try {
+            com.anthropic.models.messages.Message msg = client.messages().create(b.build());
+            long in = msg.usage().inputTokens();
+            long out = msg.usage().outputTokens();
+            String usedModel = msg.model().asString();
+            StopReason stop = msg.stopReason().orElse(null);
+            String text = msg.content().stream().flatMap(c -> c.text().stream()).map(x -> x.text())
+                    .collect(java.util.stream.Collectors.joining("\n")).trim();
+            if (StopReason.REFUSAL.equals(stop)) {
+                String why = msg.stopDetails().flatMap(d -> d.explanation()).orElse("The model declined this request.");
+                return new ChatReply("REFUSED", text.isEmpty() ? null : text, msg.id(), usedModel, in, out, why);
+            }
+            if (StopReason.MAX_TOKENS.equals(stop)) return new ChatReply("TRUNCATED", text, msg.id(), usedModel, in, out, "The answer was cut off.");
+            return new ChatReply("OK", text, msg.id(), usedModel, in, out, null);
+        } catch (RateLimitException e) {
+            return new ChatReply("ERROR", null, null, model, 0, 0, "Rate limited by the Claude API; try again later.");
+        } catch (AnthropicServiceException e) {
+            return new ChatReply("ERROR", null, null, model, 0, 0, "Claude API error " + e.statusCode() + ": " + e.getMessage());
+        } catch (RuntimeException e) {
+            return new ChatReply("ERROR", null, null, model, 0, 0, e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
     @Override public String provider() { return "anthropic"; }
     @Override public String model() { return model; }
 }

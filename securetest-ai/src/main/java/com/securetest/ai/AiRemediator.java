@@ -80,6 +80,33 @@ public class AiRemediator {
         }
     }
 
+    /** Outcome of an assistant question: status OK, DISABLED, BUDGET, REFUSED, TRUNCATED or ERROR. */
+    public record ChatOutcome(String status, String answer, String message, Map<String, Object> provenance) { }
+
+    /**
+     * The security assistant: a conversation about findings. Uses the same switch, data-processing approval and daily
+     * budget as AI fixes. The caller is responsible for redacting what goes into the system prompt and turns.
+     */
+    public ChatOutcome chat(String system, List<ModelClient.Turn> turns) {
+        if (!settings.enabled() || model == null) return new ChatOutcome("DISABLED", null, "The AI assistant is off (securetest.ai.enabled=false).", Map.of());
+        if (!settings.dataProcessingApproved()) {
+            return new ChatOutcome("DISABLED", null, "Sending findings to an external AI provider needs approval: set securetest.ai.data-processing-approved=true.", Map.of());
+        }
+        rollDay();
+        if (usedToday.get() >= settings.dailyRequestLimit()) {
+            return new ChatOutcome("BUDGET", null, "Daily AI request budget reached (" + settings.dailyRequestLimit() + ").", Map.of());
+        }
+        usedToday.incrementAndGet();
+        ModelClient.ChatReply r = model.chat(system, turns);
+        Map<String, Object> prov = new LinkedHashMap<>();
+        prov.put("provider", model.provider());
+        prov.put("model", r.model());
+        prov.put("requestId", r.requestId());
+        prov.put("inputTokens", r.inputTokens());
+        prov.put("outputTokens", r.outputTokens());
+        return new ChatOutcome(r.status(), r.text(), r.detail(), prov);
+    }
+
     public Outcome propose(Finding f, Path root) throws IOException {
         if (!settings.enabled() || model == null) return new Outcome("DISABLED", null, "AI-assisted remediation is disabled (securetest.ai.enabled=false).", Map.of());
         if (!settings.dataProcessingApproved()) {
