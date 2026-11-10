@@ -208,7 +208,7 @@ public class ReportService {
         d.metadata.put("Application version", String.valueOf(info.version()));
         d.metadata.put("Runtime", "Java " + info.javaVersion() + " (" + info.javaVendor() + "), Spring Boot " + info.springBootVersion());
         d.metadata.put("Build tool", info.buildTool());
-        d.metadata.put("SecureTest version", "1.0.0");
+        d.metadata.put("SecureTest version", "1.0.1");
         d.metadata.put("Time zone", d.zone.getId());
 
         List<ScanJob> scans = jobs.all().stream().filter(j -> scope.isEmpty() || scope.contains(j.moduleId))

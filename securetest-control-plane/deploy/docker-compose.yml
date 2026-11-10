@@ -15,7 +15,7 @@ services:
       retries: 20
 
   control-plane:
-    image: securetest/control-plane:1.0.0
+    image: securetest/control-plane:1.0.1
     build: ..
     depends_on:
       postgres:

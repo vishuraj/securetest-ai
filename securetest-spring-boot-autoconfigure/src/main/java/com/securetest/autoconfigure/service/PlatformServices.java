@@ -130,7 +130,7 @@ public final class PlatformServices {
                 body.put("environment", info.environment());
                 body.put("version", info.version());
                 body.put("runtime", Map.of("java", info.javaVersion(), "springBoot", info.springBootVersion()));
-                body.put("agentVersion", "1.0.0");
+                body.put("agentVersion", "1.0.1");
                 body.put("capabilities", capabilities);
                 HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(props.getControlPlane().getUrl().replaceAll("/$", "") + "/api/v1/agents/register"))
                         .timeout(Duration.ofSeconds(10)).header("Content-Type", "application/json")
