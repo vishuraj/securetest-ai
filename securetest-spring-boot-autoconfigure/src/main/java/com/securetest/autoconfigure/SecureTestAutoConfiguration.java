@@ -346,6 +346,8 @@ public class SecureTestAutoConfiguration {
         @Bean ProwlerAdapter secureTestProwler() { return new ProwlerAdapter(); }
         @Bean TrivyAdapter secureTestTrivyImage() { return new TrivyAdapter(ModuleCatalog.CLOUD_SECURITY, "trivy-image"); }
         @Bean RuntimeAlertScanner secureTestRuntimeAlerts() { return new RuntimeAlertScanner(); }
+        @Bean com.securetest.adapters.builtin.LlmCodeScanner secureTestLlmCode() { return new com.securetest.adapters.builtin.LlmCodeScanner(); }
+        @Bean com.securetest.adapters.builtin.PromptInjectionScanner secureTestPromptInjection() { return new com.securetest.adapters.builtin.PromptInjectionScanner(); }
 
         @Bean
         ConfigPostureScanner secureTestConfigPosture(ConfigurableEnvironment env, SecureTestProperties props) {
