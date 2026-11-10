@@ -97,6 +97,14 @@ public class DashboardGate {
         if (uri.equals(basePath + "/api/v1/integrations/events")) { // machine-to-machine, token checked by the controller
             return new Decision(true, null, info, res);
         }
+        if (uri.equals(basePath + "/disclose") && props.getDisclosure().isEnabled()) { // public vulnerability report form (opt-in)
+            if (!rateLimit("disclose:" + req.remoteAddress())) {
+                res.header("Retry-After", "5");
+                res.json(429, "Too many requests");
+                return new Decision(false, null, info, res);
+            }
+            return new Decision(true, null, info, res);
+        }
         String provider = provider();
         if ("oidc".equals(provider) && oidc != null) {
             if (uri.equals(basePath + "/oidc/login")) { oidc.startLogin(req, res, basePath); return new Decision(false, null, info, res); }

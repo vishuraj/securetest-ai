@@ -14,6 +14,7 @@ const NAV = [
   { sep: 'Governance' },
   { hash: '#/engagements', label: 'Pentest engagements' },
   { hash: '#/attack-surface', label: 'Attack surface' },
+  { hash: '#/disclosures', label: 'Vulnerability reports' },
   { hash: '#/compliance', label: 'Compliance' },
   { hash: '#/migration', label: 'Migration workflow' },
   { hash: '#/reports', label: 'Reports' },

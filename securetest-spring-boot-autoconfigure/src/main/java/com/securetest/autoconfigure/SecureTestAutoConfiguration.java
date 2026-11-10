@@ -91,7 +91,7 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.AssistantController.class, com.securetest.autoconfigure.web.AttackSurfaceController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.DisclosureController.class, com.securetest.autoconfigure.web.AssistantController.class, com.securetest.autoconfigure.web.AttackSurfaceController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
         SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
@@ -179,6 +179,12 @@ public class SecureTestAutoConfiguration {
     com.securetest.autoconfigure.asm.AttackSurfaceScanner secureTestAttackSurfaceScanner(com.securetest.autoconfigure.asm.AttackSurfaceService inventory,
                                                                                        NotificationService notifications, SecureTestProperties props) {
         return new com.securetest.autoconfigure.asm.AttackSurfaceScanner(inventory, notifications, () -> props.getSecurity().isAllowExternalIntelligence());
+    }
+
+    @Bean
+    com.securetest.autoconfigure.disclosure.DisclosureService secureTestDisclosures(SecureTestProperties props, LocalStore store, FindingService findings,
+                                                                                  NotificationService notifications) {
+        return new com.securetest.autoconfigure.disclosure.DisclosureService(props, store, findings, notifications);
     }
 
     @Bean

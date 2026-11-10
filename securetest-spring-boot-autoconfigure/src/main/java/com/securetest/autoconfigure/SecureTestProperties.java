@@ -41,6 +41,46 @@ public class SecureTestProperties {
     private String role = "auto";
     private Fleet fleet = new Fleet();
     private Integrations integrations = new Integrations();
+    private Disclosure disclosure = new Disclosure();
+
+    /**
+     * Vulnerability disclosure program: /.well-known/security.txt (RFC 9116) and a public report form for external security
+     * researchers. OFF by default; when on, these are the only SecureTest pages reachable without signing in.
+     */
+    public static class Disclosure {
+        private boolean enabled = false;
+        /** Contact lines for security.txt, e.g. mailto:security@example.com or https://example.com/security. */
+        private List<String> contact = new ArrayList<>();
+        /** Serve the report form at {dashboard-path}/disclose and list it as a contact. */
+        private boolean form = true;
+        private String policy;
+        private String acknowledgments;
+        private String encryption;
+        private String preferredLanguages = "en";
+        /** How long the published security.txt is valid (RFC 9116 requires an Expires date; under a year is recommended). */
+        private java.time.Duration expiresAfter = java.time.Duration.ofDays(180);
+        /** Reports accepted per client address per hour. */
+        private int reportsPerHour = 5;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public List<String> getContact() { return contact; }
+        public void setContact(List<String> contact) { this.contact = contact; }
+        public boolean isForm() { return form; }
+        public void setForm(boolean form) { this.form = form; }
+        public String getPolicy() { return policy; }
+        public void setPolicy(String policy) { this.policy = policy; }
+        public String getAcknowledgments() { return acknowledgments; }
+        public void setAcknowledgments(String acknowledgments) { this.acknowledgments = acknowledgments; }
+        public String getEncryption() { return encryption; }
+        public void setEncryption(String encryption) { this.encryption = encryption; }
+        public String getPreferredLanguages() { return preferredLanguages; }
+        public void setPreferredLanguages(String preferredLanguages) { this.preferredLanguages = preferredLanguages; }
+        public java.time.Duration getExpiresAfter() { return expiresAfter; }
+        public void setExpiresAfter(java.time.Duration expiresAfter) { this.expiresAfter = expiresAfter; }
+        public int getReportsPerHour() { return reportsPerHour; }
+        public void setReportsPerHour(int reportsPerHour) { this.reportsPerHour = reportsPerHour; }
+    }
 
     /** Issue trackers. Each is used only when configured, and only when a user creates or refreshes an issue (no polling). */
     public static class Integrations {
@@ -591,6 +631,8 @@ public class SecureTestProperties {
     public void setRole(String role) { this.role = role; }
     public Fleet getFleet() { return fleet; }
     public Integrations getIntegrations() { return integrations; }
+    public Disclosure getDisclosure() { return disclosure; }
+    public void setDisclosure(Disclosure disclosure) { this.disclosure = disclosure; }
     public void setIntegrations(Integrations integrations) { this.integrations = integrations; }
     public void setFleet(Fleet fleet) { this.fleet = fleet; }
 
