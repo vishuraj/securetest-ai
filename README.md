@@ -15,14 +15,14 @@ Maven:
 <dependency>
   <groupId>io.github.vishuraj</groupId>
   <artifactId>securetest-spring-boot-starter</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
 </dependency>
 ```
 
 Gradle:
 
 ```groovy
-implementation "io.github.vishuraj:securetest-spring-boot-starter:1.0.1"
+implementation "io.github.vishuraj:securetest-spring-boot-starter:1.0.2"
 ```
 
 That is all: start the app and open `/securetest`. Every optional module starts disabled; you switch modules on and give
@@ -48,7 +48,7 @@ No Maven installation needed: the Maven Wrapper downloads Maven 3.9.16 on first 
 
 ```bash
 ./mvnw install
-java -jar securetest-sample-app/target/securetest-sample-app-1.0.1.jar --securetest.workspace.source-root=securetest-sample-app
+java -jar securetest-sample-app/target/securetest-sample-app-1.0.2.jar --securetest.workspace.source-root=securetest-sample-app
 ```
 
 Then open http://localhost:8080/securetest. The sample app contains deliberate weaknesses: MD5, `new Random()`, a committed fake
@@ -162,7 +162,7 @@ SecureTest works out which kind of system it is in, and the dashboard adapts:
   <dependency>
     <groupId>io.github.vishuraj</groupId>
     <artifactId>securetest-spring-boot-starter</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
   </dependency>
 </dependencies>
 ```
@@ -373,12 +373,12 @@ The **Enterprise Control Plane** and **Embedded + Remote Worker** profiles add t
 
 ```bash
 mvn install
-docker build -t securetest/control-plane:1.0.1 securetest-control-plane
-docker build -t securetest/worker:1.0.1 securetest-worker
+docker build -t securetest/control-plane:1.0.2 securetest-control-plane
+docker build -t securetest/worker:1.0.2 securetest-worker
 ```
 
-The runnable jars are `securetest-control-plane/target/securetest-control-plane-1.0.1-exec.jar` and
-`securetest-worker/target/securetest-worker-1.0.1-exec.jar`. The plain jars are libraries.
+The runnable jars are `securetest-control-plane/target/securetest-control-plane-1.0.2-exec.jar` and
+`securetest-worker/target/securetest-worker-1.0.2-exec.jar`. The plain jars are libraries.
 
 ### 2. Run PostgreSQL and the control plane
 
@@ -418,7 +418,7 @@ The agent registers within seconds and then re-registers every `heartbeat` (defa
 
 ### 4. Run workers
 
-Run workers on hosts with Docker or Podman that can reach the targets. Start them as `java -jar securetest-worker-1.0.1-exec.jar`:
+Run workers on hosts with Docker or Podman that can reach the targets. Start them as `java -jar securetest-worker-1.0.2-exec.jar`:
 
 ```yaml
 securetest:
@@ -429,7 +429,7 @@ securetest:
     concurrency: 2
     sandbox:
       mode: container            # "process" = child JVM, for development/CI only
-      image: securetest/worker:1.0.1
+      image: securetest/worker:1.0.2
       network: securetest-scan   # a network that reaches the targets and nothing else
       memory: 1g
       cpus: "1.0"

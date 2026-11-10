@@ -272,7 +272,7 @@ public class DependencyScanner implements Scanner {
         root.put("version", 1);
         ObjectNode meta = root.putObject("metadata");
         meta.put("timestamp", Instant.now().toString());
-        meta.putArray("tools").addObject().put("vendor", "SecureTest").put("name", "securetest-adapters").put("version", "1.0.1");
+        meta.putArray("tools").addObject().put("vendor", "SecureTest").put("name", "securetest-adapters").put("version", "1.0.2");
         ObjectNode app = meta.putObject("component");
         app.put("type", "application");
         app.put("name", ctx.application().name());

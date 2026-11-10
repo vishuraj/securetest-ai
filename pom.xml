@@ -13,7 +13,7 @@
 
     <groupId>io.github.vishuraj</groupId>
     <artifactId>securetest-parent</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <packaging>pom</packaging>
     <name>SecureTest AI :: Parent</name>
     <description>Plug-and-play quality, security, performance, compliance and modernization platform for Spring Boot.</description>
