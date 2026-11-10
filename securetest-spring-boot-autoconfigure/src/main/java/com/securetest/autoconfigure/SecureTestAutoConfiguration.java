@@ -151,6 +151,13 @@ public class SecureTestAutoConfiguration {
                 name -> org.springframework.util.ClassUtils.isPresent(name, SecureTestAutoConfiguration.class.getClassLoader()));
     }
 
+    /** The portfolio report reads the "All services" view (wired after startup to keep bean creation order simple). */
+    @Bean
+    org.springframework.beans.factory.SmartInitializingSingleton secureTestPortfolioReports(ReportService reports,
+            com.securetest.autoconfigure.fleet.FleetService fleet) {
+        return () -> reports.bind(fleet);
+    }
+
     @Bean
     com.securetest.autoconfigure.service.IssueTrackerService secureTestIssueTrackers(SecureTestProperties props, SecretResolver secrets, AppContext app) {
         return new com.securetest.autoconfigure.service.IssueTrackerService(props, secrets, app);

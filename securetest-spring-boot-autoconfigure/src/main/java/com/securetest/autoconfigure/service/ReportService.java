@@ -55,6 +55,7 @@ public class ReportService {
         TYPES.put("remediation", "Remediation progress and SLA report");
         TYPES.put("pentest", "Penetration test engagement report");
         TYPES.put("attestation", "Penetration test completion letter");
+        TYPES.put("portfolio", "Portfolio report across services and clients");
     }
 
     public static class Report {
@@ -190,6 +191,7 @@ public class ReportService {
         d.generatedAt = Instant.now();
 
         if (r.type.equals("pentest") || r.type.equals("attestation")) return engagementReport(r, req, d);
+        if (r.type.equals("portfolio")) return portfolioReport(d);
         Set<String> scope = scopeModules(r.type, req.modules());
         Severity min = req.minPriority() == null ? Severity.INFO : Severity.valueOf(req.minPriority());
         List<Finding> list = findings.all().stream()
@@ -261,6 +263,52 @@ public class ReportService {
 
     public void bind(com.securetest.autoconfigure.pentest.EngagementService engagements) {
         this.engagements = engagements;
+    }
+
+    private com.securetest.autoconfigure.fleet.FleetService fleet;
+
+    public void bind(com.securetest.autoconfigure.fleet.FleetService fleet) {
+        this.fleet = fleet;
+    }
+
+    /** Agency / portfolio view: every client and service of the system, from the "All services" data. */
+    @SuppressWarnings("unchecked")
+    private ReportDocument portfolioReport(ReportDocument d) {
+        Map<String, Object> view = fleet == null ? Map.of() : fleet.view(true);
+        List<Map<String, Object>> services = (List<Map<String, Object>>) view.getOrDefault("services", List.of());
+        List<Map<String, Object>> clients = (List<Map<String, Object>>) view.getOrDefault("clients", List.of());
+        Map<String, Object> totals = (Map<String, Object>) view.getOrDefault("totals", Map.of());
+        d.findings = new ArrayList<>();
+        for (Severity s : Severity.values()) d.severityCounts.put(s, 0);
+        d.severityCounts.put(Severity.CRITICAL, num(totals.get("openCritical")));
+        d.severityCounts.put(Severity.HIGH, num(totals.get("openHigh")));
+        d.scope = (clients.isEmpty() ? "" : clients.size() + " client(s), ") + services.size() + " service(s) and " + num(totals.get("instances"))
+                + " instance(s) reachable from " + app.name() + ".";
+        d.executiveSummary = num(totals.get("reporting")) + " of " + num(totals.get("instances")) + " instances reported. " + num(totals.get("down"))
+                + " are down or unreachable; " + num(totals.get("gateFailing")) + " service(s) fail their release gate; " + num(totals.get("openCritical"))
+                + " critical and " + num(totals.get("openHigh")) + " high findings are open across the portfolio.";
+        if (!clients.isEmpty()) {
+            d.addTable("Clients", List.of("Client", "Services", "Instances", "Down", "Gate failing", "Critical", "High"),
+                    clients.stream().map(c -> List.of(String.valueOf(c.get("name")), String.valueOf(c.get("services")), String.valueOf(c.get("instances")),
+                            String.valueOf(c.get("down")), String.valueOf(c.get("gateFailing")), String.valueOf(c.get("openCritical")),
+                            String.valueOf(c.get("openHigh")))).toList());
+        }
+        d.addTable("Services", List.of("Client", "Service", "Role", "Instances up", "Health", "Release gate", "Critical", "High", "p95 (ms)", "Errors %"),
+                services.stream().map(s -> List.of(String.valueOf(s.get("client") == null ? "" : s.get("client")), String.valueOf(s.get("name")),
+                        String.valueOf(s.get("role")), s.get("up") + " / " + s.get("total"), String.valueOf(s.get("health")),
+                        String.valueOf(s.get("gate") == null ? "-" : s.get("gate")), String.valueOf(s.get("openCritical")), String.valueOf(s.get("openHigh")),
+                        Boolean.TRUE.equals(s.get("httpRecording")) ? String.valueOf(s.get("p95Ms")) : "-",
+                        Boolean.TRUE.equals(s.get("httpRecording")) ? String.valueOf(s.get("errorRatePercent")) : "-")).toList());
+        d.addTable("Modules", List.of("Client", "Service", "Enabled modules and state"),
+                services.stream().map(s -> List.of(String.valueOf(s.get("client") == null ? "" : s.get("client")), String.valueOf(s.get("name")),
+                        ((List<Map<String, Object>>) s.getOrDefault("modules", List.of())).stream().filter(m -> Boolean.TRUE.equals(m.get("enabled")))
+                                .map(m -> m.get("name") + ": " + m.get("state")).collect(java.util.stream.Collectors.joining(", ")))).toList());
+        d.limitations.add("Services that did not answer (no SecureTest, wrong token, unreachable) are listed without data.");
+        return d;
+    }
+
+    private static int num(Object o) {
+        return o instanceof Number n ? n.intValue() : 0;
     }
 
     private ReportDocument engagementReport(Report r, Request req, ReportDocument d) {

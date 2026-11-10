@@ -75,7 +75,7 @@ public class FleetService {
             "last-modified", "location", "retry-after");
 
     /** One instance in the view. */
-    record Target(String key, String service, String instanceId, String baseUrl, boolean self) { }
+    record Target(String key, String service, String instanceId, String baseUrl, boolean self, String client, String tokenRef) { }
 
     /** A proxied response. */
     public record Forwarded(int status, Map<String, String> headers, byte[] body) { }
@@ -211,10 +211,16 @@ public class FleetService {
         List<Map<String, Object>> instances = calls.stream().map(CompletableFuture::join).toList();
 
         Map<String, List<Map<String, Object>>> byService = new LinkedHashMap<>();
-        for (Map<String, Object> i : instances) byService.computeIfAbsent((String) i.get("service"), k -> new ArrayList<>()).add(i);
+        for (Map<String, Object> i : instances) {
+            String group = (i.get("client") == null ? "" : i.get("client") + "\u0000") + i.get("service");
+            byService.computeIfAbsent(group, k -> new ArrayList<>()).add(i);
+        }
         List<Map<String, Object>> services = new ArrayList<>();
-        for (Map.Entry<String, List<Map<String, Object>>> e : byService.entrySet()) services.add(service(e.getKey(), e.getValue()));
-        services.sort(Comparator.comparing((Map<String, Object> s) -> !Boolean.TRUE.equals(s.get("self")))
+        for (List<Map<String, Object>> group : byService.values()) {
+            services.add(service((String) group.get(0).get("service"), (String) group.get(0).get("client"), group));
+        }
+        services.sort(Comparator.comparing((Map<String, Object> s) -> String.valueOf(s.get("client") == null ? "" : s.get("client")))
+                .thenComparing(s -> !Boolean.TRUE.equals(s.get("self")))
                 .thenComparing(s -> "infra".equals(s.get("role")))
                 .thenComparing(s -> String.valueOf(s.get("name"))));
 
@@ -227,12 +233,35 @@ public class FleetService {
         totals.put("gateFailing", services.stream().filter(s -> "FAIL".equals(s.get("gate"))).count());
         totals.put("openCritical", services.stream().mapToInt(s -> intOf(s.get("openCritical"))).sum());
         totals.put("openHigh", services.stream().mapToInt(s -> intOf(s.get("openHigh"))).sum());
+        Map<String, Map<String, Object>> clients = new LinkedHashMap<>();
+        for (Map<String, Object> s : services) {
+            if (s.get("client") == null) continue;
+            Map<String, Object> c = clients.computeIfAbsent((String) s.get("client"), k -> {
+                Map<String, Object> n = new LinkedHashMap<>();
+                n.put("name", k);
+                n.put("services", 0);
+                n.put("instances", 0);
+                n.put("down", 0);
+                n.put("gateFailing", 0);
+                n.put("openCritical", 0);
+                n.put("openHigh", 0);
+                return n;
+            });
+            c.merge("services", 1, (a, b) -> intOf(a) + intOf(b));
+            c.merge("instances", intOf(s.get("total")), (a, b) -> intOf(a) + intOf(b));
+            c.merge("down", "DOWN".equals(s.get("health")) || "DEGRADED".equals(s.get("health")) ? 1 : 0, (a, b) -> intOf(a) + intOf(b));
+            c.merge("gateFailing", "FAIL".equals(s.get("gate")) ? 1 : 0, (a, b) -> intOf(a) + intOf(b));
+            c.merge("openCritical", intOf(s.get("openCritical")), (a, b) -> intOf(a) + intOf(b));
+            c.merge("openHigh", intOf(s.get("openHigh")), (a, b) -> intOf(a) + intOf(b));
+        }
+        totals.put("clients", clients.size());
 
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("architecture", architecture());
         m.put("sources", sources());
         m.put("self", ts.stream().filter(Target::self).map(Target::key).findFirst().orElse(null));
         m.put("totals", totals);
+        m.put("clients", new ArrayList<>(clients.values()));
         m.put("services", services);
         m.put("generatedAt", Instant.now().toString());
         view = m;
@@ -240,9 +269,10 @@ public class FleetService {
         return m;
     }
 
-    private Map<String, Object> service(String name, List<Map<String, Object>> instances) {
+    private Map<String, Object> service(String name, String client, List<Map<String, Object>> instances) {
         Map<String, Object> s = new LinkedHashMap<>();
         s.put("name", name);
+        s.put("client", client);
         s.put("self", instances.stream().anyMatch(i -> Boolean.TRUE.equals(i.get("self"))));
         List<Map<String, Object>> ok = instances.stream().filter(i -> "OK".equals(i.get("status"))).toList();
         Map<String, Object> first = ok.isEmpty() ? null : summary(ok.get(0));
@@ -272,7 +302,7 @@ public class FleetService {
         try {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(t.baseUrl() + "/api/v1/fleet/summary"))
                     .timeout(fleet().getTimeout()).header("Accept", "application/json").GET();
-            trustHeaders(b, "securetest-fleet", "VIEWER");
+            trustHeaders(b, t, "securetest-fleet", "VIEWER");
             HttpResponse<String> r = http.send(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             int code = r.statusCode();
             if (code == 200) {
@@ -300,6 +330,7 @@ public class FleetService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("key", t.key());
         m.put("service", t.service());
+        m.put("client", t.client());
         m.put("instanceId", t.instanceId());
         m.put("url", t.self() ? null : display(t.baseUrl()));
         m.put("self", t.self());
@@ -324,7 +355,7 @@ public class FleetService {
         requestHeaders.forEach((k, v) -> {
             if (v != null && FORWARDED_REQUEST_HEADERS.contains(k.toLowerCase(Locale.ROOT))) b.header(k, v);
         });
-        trustHeaders(b, user.name(), user.roles().stream().map(Enum::name).sorted().collect(Collectors.joining(",")));
+        trustHeaders(b, t, user.name(), user.roles().stream().map(Enum::name).sorted().collect(Collectors.joining(",")));
         try {
             HttpResponse<byte[]> r = http.send(b.build(), HttpResponse.BodyHandlers.ofByteArray());
             Map<String, String> headers = new LinkedHashMap<>();
@@ -363,8 +394,8 @@ public class FleetService {
         return location;
     }
 
-    private void trustHeaders(HttpRequest.Builder b, String user, String roles) {
-        String token = token();
+    private void trustHeaders(HttpRequest.Builder b, Target t, String user, String roles) {
+        String token = token(t);
         if (token != null) {
             b.header(TOKEN_HEADER, token);
             b.header(USER_HEADER, user);
@@ -376,6 +407,15 @@ public class FleetService {
     private String token() {
         String t = secrets.resolve(fleet().getTokenRef());
         return t == null || t.isBlank() ? null : t.trim();
+    }
+
+    /** A service's own token (one secret per client in agency setups), else the shared fleet token. */
+    private String token(Target target) {
+        if (target != null && target.tokenRef() != null && !target.tokenRef().isBlank()) {
+            String t = secrets.resolve(target.tokenRef());
+            return t == null || t.isBlank() ? null : t.trim();
+        }
+        return token();
     }
 
     // ------------------------------------------------------------------ targets
@@ -396,15 +436,15 @@ public class FleetService {
     synchronized List<Target> targets(boolean refresh) {
         long now = System.currentTimeMillis();
         if (!refresh && targetsAt > 0 && now - targetsAt < fleet().getCacheTtl().toMillis()) return targets;
-        record Raw(String service, String instanceId, String baseUrl, boolean self) { }
+        record Raw(String service, String instanceId, String baseUrl, boolean self, String client, String tokenRef) { }
         List<Raw> raw = new ArrayList<>();
-        raw.add(new Raw(app.name(), selfInstanceId(), null, true));
+        raw.add(new Raw(app.name(), selfInstanceId(), null, true, blankToNull(fleet().getClient()), null));
         Set<String> seen = new HashSet<>();
         for (SecureTestProperties.Member m : fleet().getMembers()) {
             if (m.getUrl() == null || m.getUrl().isBlank()) continue;
             String base = stripSlash(m.getUrl()) + props.normalizedPath();
             String name = m.getName() == null || m.getName().isBlank() ? URI.create(m.getUrl()).getHost() : m.getName();
-            if (seen.add(base)) raw.add(new Raw(name, display(m.getUrl()), base, false));
+            if (seen.add(base)) raw.add(new Raw(name, display(m.getUrl()), base, false, blankToNull(m.getClient()), blankToNull(m.getTokenRef())));
         }
         if (fleet().isDiscovery()) {
             for (FleetDiscovery d : discovery) {
@@ -412,21 +452,23 @@ public class FleetService {
                     if (isSelf(i)) continue;
                     String path = i.metadata().getOrDefault("securetest-path", i.metadata().getOrDefault("securetest.path", props.normalizedPath()));
                     String base = stripSlash(i.baseUri().toString()) + path;
-                    if (seen.add(base)) raw.add(new Raw(i.service().toLowerCase(Locale.ROOT), i.instanceId(), base, false));
+                    if (seen.add(base)) raw.add(new Raw(i.service().toLowerCase(Locale.ROOT), i.instanceId(), base, false,
+                            blankToNull(i.metadata().get("securetest-client")), null));
                 }
             }
         }
         int max = Math.max(1, fleet().getMaxInstances());
         if (raw.size() > max) raw = new ArrayList<>(raw.subList(0, max));
-        Map<String, Long> perService = raw.stream().collect(Collectors.groupingBy(r -> sanitize(r.service()), Collectors.counting()));
+        java.util.function.Function<Raw, String> baseKey = r -> (r.client() == null ? "" : sanitize(r.client()) + ".") + sanitize(r.service());
+        Map<String, Long> perService = raw.stream().collect(Collectors.groupingBy(baseKey, Collectors.counting()));
         List<Target> out = new ArrayList<>();
         Set<String> keys = new HashSet<>();
         for (Raw r : raw) {
-            String k = sanitize(r.service());
+            String k = baseKey.apply(r);
             if (perService.get(k) > 1) k = k + "~" + (r.self() ? "this" : sanitize(r.instanceId()));
             String unique = k;
             for (int n = 2; !keys.add(unique); n++) unique = k + "-" + n;
-            out.add(new Target(unique, r.service(), r.instanceId(), r.baseUrl(), r.self()));
+            out.add(new Target(unique, r.service(), r.instanceId(), r.baseUrl(), r.self(), r.client(), r.tokenRef()));
         }
         targets = Collections.unmodifiableList(out);
         targetsAt = now;
@@ -516,6 +558,10 @@ public class FleetService {
         } catch (RuntimeException e) {
             return url;
         }
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 
     static String sanitize(String s) {

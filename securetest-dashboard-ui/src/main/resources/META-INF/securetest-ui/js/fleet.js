@@ -48,9 +48,12 @@ ST.pages.fleet = async (view) => {
         + 'finds other services through service discovery, or when you list them in securetest.fleet.members.')));
     return;
   }
+  let client = '';
   const draw = async (refresh) => {
     const f = await guard(() => GET('/fleet' + (refresh ? '?refresh=true' : '')));
     if (!f) return;
+    const clients = f.clients || [];
+    const shown = (f.services || []).filter(s => !client || s.client === client);
     const t = f.totals || {};
     const problems = [];
     (f.services || []).forEach(s => (s.instances || []).forEach(i => { if (i.status !== 'OK') problems.push(i); }));
@@ -60,7 +63,12 @@ ST.pages.fleet = async (view) => {
         el('div', { class: 'grow' }, el('h1', null, 'All services'),
           el('div', { class: 'muted' }, (f.sources && f.sources.length ? 'Found through ' + f.sources.join(', ') : f.architecture.reason)
             + ' · updated ' + fmt.ago(f.generatedAt) + ' · refreshes every 15 s')),
-        el('button', { class: 'btn', onclick: () => draw(true) }, '↻ Refresh')),
+        el('div', { class: 'row' },
+          el('button', { class: 'btn', onclick: async () => {
+            const r = await guard(() => POST('/reports', { type: 'portfolio', includeClosed: false }));
+            if (r) { toast('Portfolio report ' + r.id + ' is being generated', 'ok'); go('#/report/' + r.id); }
+          } }, 'Portfolio report'),
+          el('button', { class: 'btn', onclick: () => draw(true) }, '↻ Refresh'))),
       !f.architecture.fleetTokenConfigured ? el('div', { class: 'alert info small' },
         'Services on other machines or containers trust each other through a shared secret. Set the same ', el('code', null, 'SECURETEST_FLEET_TOKEN'),
         ' on every service (for example in your config server or .env). Services on this machine work without it.') : null,
@@ -71,8 +79,22 @@ ST.pages.fleet = async (view) => {
         stat('Release gate failing', t.gateFailing ? el('span', { class: 'badge st-FAIL' }, t.gateFailing) : fmt.num(0), 'services'),
         stat('Open critical', t.openCritical ? sevBadge('CRITICAL', String(t.openCritical)) : fmt.num(0), 'across all services'),
         stat('Open high', t.openHigh ? sevBadge('HIGH', String(t.openHigh)) : fmt.num(0), 'across all services')),
-      card('Services',
+      clients.length ? card('Clients',
+        el('div', { class: 'chips', role: 'group', 'aria-label': 'Client filter', style: { marginBottom: '10px' } },
+          el('button', { class: 'chip', 'aria-pressed': String(!client), onclick: () => { client = ''; draw(false); } }, 'All clients'),
+          clients.map(c => el('button', { class: 'chip', 'aria-pressed': String(client === c.name), onclick: () => { client = c.name; draw(false); } }, c.name))),
         table([
+          { label: 'Client', key: 'name', render: c => el('b', null, c.name) },
+          { label: 'Services', num: true, key: 'services' },
+          { label: 'Instances', num: true, key: 'instances' },
+          { label: 'Down', num: true, sort: c => c.down, render: c => c.down ? el('span', { class: 'badge st-DOWN' }, c.down) : '0' },
+          { label: 'Gate failing', num: true, sort: c => c.gateFailing, render: c => c.gateFailing ? el('span', { class: 'badge st-FAIL' }, c.gateFailing) : '0' },
+          { label: 'Critical / High', num: true, sort: c => c.openCritical * 1000 + c.openHigh, render: c => el('span', null,
+              c.openCritical ? sevBadge('CRITICAL', String(c.openCritical)) : '0', ' / ', c.openHigh ? sevBadge('HIGH', String(c.openHigh)) : '0') }
+        ], clients, { onRow: c => { client = c.name; draw(false); }, caption: 'Clients' })) : null,
+      card(client ? 'Services · ' + client : 'Services',
+        table([
+          clients.length ? { label: 'Client', sort: s => s.client || '', render: s => s.client || el('span', { class: 'muted' }, '—') } : null,
           { label: 'Service', sort: s => s.name, render: s => el('span', null, el('b', null, s.name),
               s.self ? el('span', { class: 'badge st-INFO', style: { marginLeft: '6px' } }, 'this service') : null,
               s.role === 'infra' ? el('span', { class: 'badge st-DISABLED', style: { marginLeft: '6px' }, title: s.roleDetail || '' }, 'infra') : null) },
@@ -86,7 +108,7 @@ ST.pages.fleet = async (view) => {
               s.openCritical ? sevBadge('CRITICAL', String(s.openCritical)) : '0', ' / ', s.openHigh ? sevBadge('HIGH', String(s.openHigh)) : '0') },
           { label: 'Modules', render: s => fleetModules(s.modules) },
           { label: '', render: s => el('button', { class: 'btn small', onclick: (e) => { e.stopPropagation(); fleetOpen(s); } }, 'Open') }
-        ], f.services || [], { onRow: fleetOpen, caption: 'Services', empty: 'No services found yet' })),
+        ].filter(Boolean), shown, { onRow: fleetOpen, caption: 'Services', empty: 'No services found yet' })),
       problems.length ? card('Needs attention',
         table([
           { label: 'Service', key: 'service' },

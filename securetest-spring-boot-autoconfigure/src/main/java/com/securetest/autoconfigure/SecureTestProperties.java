@@ -159,6 +159,8 @@ public class SecureTestProperties {
         private Duration cacheTtl = Duration.ofSeconds(10);
         /** Upper bound on instances queried for one view. */
         private int maxInstances = 100;
+        /** Client / customer this application belongs to (agency workspaces group services by client). */
+        private String client;
 
         public String getEnabled() { return enabled; }
         public void setEnabled(String enabled) { this.enabled = enabled; }
@@ -174,17 +176,27 @@ public class SecureTestProperties {
         public void setCacheTtl(Duration cacheTtl) { this.cacheTtl = cacheTtl; }
         public int getMaxInstances() { return maxInstances; }
         public void setMaxInstances(int maxInstances) { this.maxInstances = maxInstances; }
+        public String getClient() { return client; }
+        public void setClient(String client) { this.client = client; }
     }
 
     public static class Member {
         private String name;
         /** Base URL of the service (scheme, host, port and any servlet context path). */
         private String url;
+        /** Client / customer the service belongs to (agency workspaces). */
+        private String client;
+        /** This service's own fleet token, when it differs from securetest.fleet.token-ref (e.g. one secret per client). */
+        private String tokenRef;
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
         public String getUrl() { return url; }
         public void setUrl(String url) { this.url = url; }
+        public String getClient() { return client; }
+        public void setClient(String client) { this.client = client; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
     }
 
     /** AI-assisted remediation (SRS 9.2). Off by default; needs BOTH enabled and data-processing-approved. */
