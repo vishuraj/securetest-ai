@@ -91,7 +91,7 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.AttackSurfaceController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
         SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
@@ -161,6 +161,24 @@ public class SecureTestAutoConfiguration {
         com.securetest.autoconfigure.pentest.EngagementService e = new com.securetest.autoconfigure.pentest.EngagementService(store, findings);
         reports.bind(e);
         return e;
+    }
+
+    @Bean
+    com.securetest.autoconfigure.asm.AttackSurfaceService secureTestAttackSurface(LocalStore store) {
+        return new com.securetest.autoconfigure.asm.AttackSurfaceService(store);
+    }
+
+    /** Registering a domain authorizes checks of it and its subdomains (wired after startup: scanners depend on the inventory). */
+    @Bean
+    org.springframework.beans.factory.SmartInitializingSingleton secureTestAttackSurfaceTargets(JobService jobs,
+            com.securetest.autoconfigure.asm.AttackSurfaceService inventory) {
+        return () -> jobs.addTargets(inventory::allowlistEntries);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.asm.AttackSurfaceScanner secureTestAttackSurfaceScanner(com.securetest.autoconfigure.asm.AttackSurfaceService inventory,
+                                                                                       NotificationService notifications, SecureTestProperties props) {
+        return new com.securetest.autoconfigure.asm.AttackSurfaceScanner(inventory, notifications, () -> props.getSecurity().isAllowExternalIntelligence());
     }
 
     @Bean

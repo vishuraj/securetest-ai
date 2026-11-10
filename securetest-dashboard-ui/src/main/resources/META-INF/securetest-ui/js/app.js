@@ -12,6 +12,7 @@ const NAV = [
     .map(id => ({ module: id, hash: '#/module/' + id })),
   { sep: 'Governance' },
   { hash: '#/engagements', label: 'Pentest engagements' },
+  { hash: '#/attack-surface', label: 'Attack surface' },
   { hash: '#/compliance', label: 'Compliance' },
   { hash: '#/migration', label: 'Migration workflow' },
   { hash: '#/reports', label: 'Reports' },
