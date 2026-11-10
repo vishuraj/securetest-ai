@@ -56,6 +56,7 @@ public class ReportService {
         TYPES.put("pentest", "Penetration test engagement report");
         TYPES.put("attestation", "Penetration test completion letter");
         TYPES.put("portfolio", "Portfolio report across services and clients");
+        TYPES.put("release", "Release readiness and sign-off record");
     }
 
     public static class Report {
@@ -76,7 +77,7 @@ public class ReportService {
 
     // Boxed so a missing JSON field means false on every Jackson version (Jackson 3 rejects null for primitives).
     public record Request(String type, String title, List<String> modules, String minPriority, Boolean includeClosed, String migrationId,
-                          String engagementId) {
+                          String engagementId, String releaseId) {
         public Request {
             includeClosed = Boolean.TRUE.equals(includeClosed);
         }
@@ -134,6 +135,11 @@ public class ReportService {
         r.filters.put("includeClosed", String.valueOf(req.includeClosed()));
         if (req.migrationId() != null) r.filters.put("migrationId", req.migrationId());
         if (req.engagementId() != null) r.filters.put("engagementId", req.engagementId());
+        if (req.releaseId() != null) r.filters.put("releaseId", req.releaseId());
+        if (r.type.equals("release")) {
+            if (releases == null || req.releaseId() == null) throw ApiException.badRequest("releaseId is required for release reports");
+            releases.get(req.releaseId());
+        }
         if ((r.type.equals("pentest") || r.type.equals("attestation")) && (engagements == null || req.engagementId() == null)) {
             throw ApiException.badRequest("engagementId is required for " + r.type + " reports");
         }
@@ -192,6 +198,7 @@ public class ReportService {
 
         if (r.type.equals("pentest") || r.type.equals("attestation")) return engagementReport(r, req, d);
         if (r.type.equals("portfolio")) return portfolioReport(d);
+        if (r.type.equals("release")) return releaseReport(req, d);
         Set<String> scope = scopeModules(r.type, req.modules());
         Severity min = req.minPriority() == null ? Severity.INFO : Severity.valueOf(req.minPriority());
         List<Finding> list = findings.all().stream()
@@ -266,6 +273,43 @@ public class ReportService {
     }
 
     private com.securetest.autoconfigure.fleet.FleetService fleet;
+    private com.securetest.autoconfigure.release.ReleaseService releases;
+
+    public void bind(com.securetest.autoconfigure.release.ReleaseService releases) {
+        this.releases = releases;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ReportDocument releaseReport(Request req, ReportDocument d) {
+        var rel = releases.get(req.releaseId());
+        Map<String, Object> ready = releases.readiness(rel);
+        List<com.securetest.autoconfigure.release.ReleaseService.Check> checks = (List<com.securetest.autoconfigure.release.ReleaseService.Check>) ready.get("checks");
+        d.findings = new ArrayList<>(findings.all().stream().filter(Finding::isOpen)
+                .filter(f -> (f.priority == null ? f.sourceSeverity : f.priority).atLeast(Severity.HIGH)).toList());
+        for (Severity s : Severity.values()) d.severityCounts.put(s, 0);
+        findings.all().stream().filter(Finding::isOpen).forEach(f -> d.severityCounts.merge(f.priority == null ? f.sourceSeverity : f.priority, 1, Integer::sum));
+        d.scope = "Release " + rel.version + (rel.name == null ? "" : " (" + rel.name + ")") + " of " + app.name() + ".";
+        d.executiveSummary = "Status: " + rel.status + ". " + (Boolean.TRUE.equals(ready.get("ready")) ? "All required checks passed or were waived. "
+                : "Blocked by: " + String.join("; ", (List<String>) ready.get("blockers")) + ". ")
+                + rel.signoffs.size() + " sign-off(s) recorded" + (rel.approvedAt == null ? "." : "; approved " + rel.approvedAt + ".");
+        d.metadata.put("Release", rel.id + " / " + rel.version);
+        d.metadata.put("Target date", String.valueOf(rel.targetDate));
+        d.metadata.put("Required sign-offs", String.join(", ", rel.requiredSignoffs));
+        d.addTable("Readiness Checks", List.of("Check", "Required", "Result", "Detail"),
+                checks.stream().map(c -> List.of(c.title(), c.required() ? "yes" : "no", c.state(), c.detail())).toList());
+        if (!rel.items.isEmpty()) {
+            d.addTable("Checklist", List.of("Item", "Done", "By"), rel.items.stream().map(i -> List.of(i.title, i.done ? "yes" : "no",
+                    String.valueOf(i.by == null ? "" : i.by))).toList());
+        }
+        d.addTable("Sign-offs", List.of("Role", "User", "Decision", "When", "Comment"),
+                rel.signoffs.stream().map(s -> List.of(s.role, s.user, s.decision, String.valueOf(s.at), String.valueOf(s.comment == null ? "" : s.comment))).toList());
+        if (!rel.waivers.isEmpty()) {
+            d.addTable("Waivers", List.of("Check", "Reason", "By", "When"),
+                    rel.waivers.entrySet().stream().map(e -> List.of(e.getKey(), e.getValue().reason, e.getValue().by, String.valueOf(e.getValue().at))).toList());
+        }
+        remediationTable(d, d.findings);
+        return d;
+    }
 
     public void bind(com.securetest.autoconfigure.fleet.FleetService fleet) {
         this.fleet = fleet;

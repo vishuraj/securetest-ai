@@ -12,6 +12,7 @@ const NAV = [
   ...['health', 'metrics', 'testing', 'code-quality', 'vulnerability', 'api-security', 'performance', 'compliance', 'network-security', 'advanced-security', 'cloud-security', 'migration', 'pentest', 'attack-surface', 'ai-security']
     .map(id => ({ module: id, hash: '#/module/' + id })),
   { sep: 'Governance' },
+  { hash: '#/releases', label: 'Releases' },
   { hash: '#/engagements', label: 'Pentest engagements' },
   { hash: '#/attack-surface', label: 'Attack surface' },
   { hash: '#/disclosures', label: 'Vulnerability reports' },
