@@ -430,7 +430,8 @@ ST.panels.migration = async (panel) => {
 function findingsTable(items, opts = {}) {
   return table([
     { label: 'Priority', key: 'priority', sort: r => -(['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].indexOf(r.priority)), render: r => sevBadge(r.priority) },
-    { label: 'Finding', key: 'title', render: r => el('div', null, el('div', null, r.title, r.regression ? el('span', { class: 'badge st-FAIL', style: { marginLeft: '6px' } }, 'regression') : null),
+    { label: 'Finding', key: 'title', render: r => el('div', null, el('div', null, r.title, r.regression ? el('span', { class: 'badge st-FAIL', style: { marginLeft: '6px' } }, 'regression') : null,
+        r.verification ? el('span', { style: { marginLeft: '6px' } }, verificationBadge(r.verification)) : null),
       el('div', { class: 'small muted' }, r.id + ' · ' + (r.ruleId || '') + ' · ' + r.source)) },
     opts.hideModule ? null : { label: 'Module', key: 'moduleId', render: r => moduleName(r.moduleId) },
     { label: 'Location', key: 'filePath', render: r => el('span', { class: 'small mono truncate', title: r.filePath || r.asset || '' }, r.filePath ? r.filePath + ':' + r.lineStart : (r.asset || '—')) },
@@ -459,7 +460,8 @@ ST.pages.findings = async (view, _id, params) => {
   clear(view);
   append(view, [
     el('div', { class: 'page-head' }, el('div', { class: 'grow' }, el('h1', null, 'Findings'), el('div', { class: 'muted' }, result.total + ' matching · priority is SecureTest\'s normalized urgency; source severity is preserved separately.')),
-      el('div', { class: 'row' }, viewSel, el('button', { class: 'btn', onclick: () => {
+      el('div', { class: 'row' }, canContribute() ? el('button', { class: 'btn primary', onclick: () => reportFindingDialog() }, '+ Report finding') : null,
+        viewSel, el('button', { class: 'btn', onclick: () => {
         const name = prompt('Name for this view');
         if (name) { views[name] = q(state); saveViews(views); toast('View saved', 'ok'); }
       } }, 'Save view'))),
@@ -493,7 +495,7 @@ ST.pages.finding = async (view, id) => {
     el('div', { class: 'page-head' }, el('div', { class: 'grow' }, el('h1', null, f.title),
       el('div', { class: 'row' }, sevBadge(f.priority), el('span', { class: 'small muted' }, 'priority'), sevBadge(f.sourceSeverity, (f.sourceSeverityRaw || f.sourceSeverity)),
         el('span', { class: 'small muted' }, 'source severity'), stBadge(f.status), el('span', { class: 'tag' }, 'confidence ' + f.confidence.toLowerCase()),
-        f.regression ? el('span', { class: 'badge st-FAIL' }, 'regression') : null, el('span', { class: 'mono small muted' }, f.id)))),
+        f.regression ? el('span', { class: 'badge st-FAIL' }, 'regression') : null, verificationBadge(f.verification), el('span', { class: 'mono small muted' }, f.id)))),
     el('div', { class: 'grid g2' },
       card('Details', kv([['Module', moduleName(f.moduleId)], ['Scanner / source', f.source + (f.sourceToolVersion ? ' (' + f.sourceToolVersion + ')' : '')], ['Rule', f.ruleId],
         ['Category', f.category], ['Asset', f.asset], ['Location', f.filePath ? f.filePath + ':' + f.lineStart + (f.lineEnd && f.lineEnd !== f.lineStart ? '-' + f.lineEnd : '') : null],
@@ -530,6 +532,7 @@ ST.pages.finding = async (view, id) => {
         } }, '✦ Ask AI for a fix') : null,
         el('span', { class: 'small muted' }, ST.me.policy.aiEnabled ? 'Rules are deterministic; AI is opt-in per request. Nothing changes until you apply.' : 'Deterministic rules only (no AI); nothing changes until you apply.')),
       remBox),
+    collabCards(f),
     workflowCard(f),
     card('History', el('ul', { class: 'timeline' }, (f.history || []).slice().reverse().map(h => el('li', null, el('b', null, fmt.date(h.at)), ' · ', h.actor, ' · ', h.action, ' — ', h.detail))))
   ]);

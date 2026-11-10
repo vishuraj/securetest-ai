@@ -33,6 +33,171 @@ public class SecureTestProperties {
     private Policy policy = new Policy();
     private Application application = new Application();
     private Ai ai = new Ai();
+    /**
+     * What this application is in a microservice system. auto (default): Spring Cloud Config Server, Eureka Server,
+     * Spring Cloud Gateway and Spring Boot Admin apps are "infra" (health, metrics and performance; no source-code modules);
+     * everything else is a "service". Set service or infra to override.
+     */
+    private String role = "auto";
+    private Fleet fleet = new Fleet();
+    private Integrations integrations = new Integrations();
+    private Disclosure disclosure = new Disclosure();
+
+    /**
+     * Vulnerability disclosure program: /.well-known/security.txt (RFC 9116) and a public report form for external security
+     * researchers. OFF by default; when on, these are the only SecureTest pages reachable without signing in.
+     */
+    public static class Disclosure {
+        private boolean enabled = false;
+        /** Contact lines for security.txt, e.g. mailto:security@example.com or https://example.com/security. */
+        private List<String> contact = new ArrayList<>();
+        /** Serve the report form at {dashboard-path}/disclose and list it as a contact. */
+        private boolean form = true;
+        private String policy;
+        private String acknowledgments;
+        private String encryption;
+        private String preferredLanguages = "en";
+        /** How long the published security.txt is valid (RFC 9116 requires an Expires date; under a year is recommended). */
+        private java.time.Duration expiresAfter = java.time.Duration.ofDays(180);
+        /** Reports accepted per client address per hour. */
+        private int reportsPerHour = 5;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public List<String> getContact() { return contact; }
+        public void setContact(List<String> contact) { this.contact = contact; }
+        public boolean isForm() { return form; }
+        public void setForm(boolean form) { this.form = form; }
+        public String getPolicy() { return policy; }
+        public void setPolicy(String policy) { this.policy = policy; }
+        public String getAcknowledgments() { return acknowledgments; }
+        public void setAcknowledgments(String acknowledgments) { this.acknowledgments = acknowledgments; }
+        public String getEncryption() { return encryption; }
+        public void setEncryption(String encryption) { this.encryption = encryption; }
+        public String getPreferredLanguages() { return preferredLanguages; }
+        public void setPreferredLanguages(String preferredLanguages) { this.preferredLanguages = preferredLanguages; }
+        public java.time.Duration getExpiresAfter() { return expiresAfter; }
+        public void setExpiresAfter(java.time.Duration expiresAfter) { this.expiresAfter = expiresAfter; }
+        public int getReportsPerHour() { return reportsPerHour; }
+        public void setReportsPerHour(int reportsPerHour) { this.reportsPerHour = reportsPerHour; }
+    }
+
+    /** Issue trackers. Each is used only when configured, and only when a user creates or refreshes an issue (no polling). */
+    public static class Integrations {
+        private Jira jira = new Jira();
+        private GitHub github = new GitHub();
+
+        public Jira getJira() { return jira; }
+        public void setJira(Jira jira) { this.jira = jira; }
+        public GitHub getGithub() { return github; }
+        public void setGithub(GitHub github) { this.github = github; }
+    }
+
+    public static class Jira {
+        /** e.g. https://acme.atlassian.net (Jira Cloud) or https://jira.acme.com (Data Center). Empty = not configured. */
+        private String url;
+        private String projectKey;
+        /** Jira Cloud: account e-mail for API-token sign-in. Leave empty for a Data Center personal access token (Bearer). */
+        private String email;
+        private String tokenRef = "env://SECURETEST_JIRA_TOKEN";
+        private String issueType = "Bug";
+        /** 3 = Jira Cloud (rich-text description), 2 = Jira Data Center / Server. */
+        private int apiVersion = 3;
+        private List<String> labels = new ArrayList<>(List.of("securetest"));
+
+        public boolean configured() { return url != null && !url.isBlank() && projectKey != null && !projectKey.isBlank(); }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public String getProjectKey() { return projectKey; }
+        public void setProjectKey(String projectKey) { this.projectKey = projectKey; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+        public String getIssueType() { return issueType; }
+        public void setIssueType(String issueType) { this.issueType = issueType; }
+        public int getApiVersion() { return apiVersion; }
+        public void setApiVersion(int apiVersion) { this.apiVersion = apiVersion; }
+        public List<String> getLabels() { return labels; }
+        public void setLabels(List<String> labels) { this.labels = labels; }
+    }
+
+    public static class GitHub {
+        /** owner/name. Empty = not configured. */
+        private String repository;
+        private String apiUrl = "https://api.github.com";
+        private String tokenRef = "env://SECURETEST_GITHUB_TOKEN";
+        private List<String> labels = new ArrayList<>(List.of("security", "securetest"));
+
+        public boolean configured() { return repository != null && repository.matches("[\\w.-]+/[\\w.-]+"); }
+        public String getRepository() { return repository; }
+        public void setRepository(String repository) { this.repository = repository; }
+        public String getApiUrl() { return apiUrl; }
+        public void setApiUrl(String apiUrl) { this.apiUrl = apiUrl; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+        public List<String> getLabels() { return labels; }
+        public void setLabels(List<String> labels) { this.labels = labels; }
+    }
+
+    /** The "All services" view for microservice systems. */
+    public static class Fleet {
+        /**
+         * auto (default): shown when this app is part of a microservice system (service discovery finds other services,
+         * members are configured, or it is a Spring Cloud infrastructure app); hidden for a monolith. true / false force it.
+         */
+        private String enabled = "auto";
+        /** Shared secret every service uses to trust the others' SecureTest calls, e.g. env://SECURETEST_FLEET_TOKEN. */
+        private String tokenRef = "env://SECURETEST_FLEET_TOKEN";
+        /** Use Spring Cloud service discovery (Eureka, Consul, Kubernetes...) when it is on the classpath. */
+        private boolean discovery = true;
+        /** Services listed by hand (when there is no service discovery), e.g. {name: user-service, url: http://user-service:8081}. */
+        private List<Member> members = new ArrayList<>();
+        /** Per-call timeout when asking another service for its summary. */
+        private Duration timeout = Duration.ofSeconds(3);
+        /** How long the combined view is cached. */
+        private Duration cacheTtl = Duration.ofSeconds(10);
+        /** Upper bound on instances queried for one view. */
+        private int maxInstances = 100;
+        /** Client / customer this application belongs to (agency workspaces group services by client). */
+        private String client;
+
+        public String getEnabled() { return enabled; }
+        public void setEnabled(String enabled) { this.enabled = enabled; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+        public boolean isDiscovery() { return discovery; }
+        public void setDiscovery(boolean discovery) { this.discovery = discovery; }
+        public List<Member> getMembers() { return members; }
+        public void setMembers(List<Member> members) { this.members = members; }
+        public Duration getTimeout() { return timeout; }
+        public void setTimeout(Duration timeout) { this.timeout = timeout; }
+        public Duration getCacheTtl() { return cacheTtl; }
+        public void setCacheTtl(Duration cacheTtl) { this.cacheTtl = cacheTtl; }
+        public int getMaxInstances() { return maxInstances; }
+        public void setMaxInstances(int maxInstances) { this.maxInstances = maxInstances; }
+        public String getClient() { return client; }
+        public void setClient(String client) { this.client = client; }
+    }
+
+    public static class Member {
+        private String name;
+        /** Base URL of the service (scheme, host, port and any servlet context path). */
+        private String url;
+        /** Client / customer the service belongs to (agency workspaces). */
+        private String client;
+        /** This service's own fleet token, when it differs from securetest.fleet.token-ref (e.g. one secret per client). */
+        private String tokenRef;
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public String getClient() { return client; }
+        public void setClient(String client) { this.client = client; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+    }
 
     /** AI-assisted remediation (SRS 9.2). Off by default; needs BOTH enabled and data-processing-approved. */
     public static class Ai {
@@ -474,6 +639,14 @@ public class SecureTestProperties {
 
     public Ai getAi() { return ai; }
     public void setAi(Ai ai) { this.ai = ai; }
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+    public Fleet getFleet() { return fleet; }
+    public Integrations getIntegrations() { return integrations; }
+    public Disclosure getDisclosure() { return disclosure; }
+    public void setDisclosure(Disclosure disclosure) { this.disclosure = disclosure; }
+    public void setIntegrations(Integrations integrations) { this.integrations = integrations; }
+    public void setFleet(Fleet fleet) { this.fleet = fleet; }
 
     public Module module(String id) {
         return modules.getOrDefault(id, new Module());

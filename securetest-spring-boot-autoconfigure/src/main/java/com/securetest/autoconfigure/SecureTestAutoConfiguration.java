@@ -91,9 +91,9 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.ReleaseController.class, com.securetest.autoconfigure.web.DisclosureController.class, com.securetest.autoconfigure.web.AssistantController.class, com.securetest.autoconfigure.web.AttackSurfaceController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
-        SecureTestAutoConfiguration.MailBridgeConfig.class})
+        SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
 
     // ------------------------------------------------------------------ infrastructure
@@ -131,7 +131,87 @@ public class SecureTestAutoConfiguration {
     AuditService secureTestAudit(LocalStore store) { return new AuditService(store); }
 
     @Bean
-    ModuleService secureTestModules(SecureTestProperties props, LocalStore store) { return new ModuleService(props, store); }
+    com.securetest.autoconfigure.support.AppRole secureTestAppRole(SecureTestProperties props) {
+        return com.securetest.autoconfigure.support.AppRole.resolve(props.getRole(),
+                name -> org.springframework.util.ClassUtils.isPresent(name, SecureTestAutoConfiguration.class.getClassLoader()));
+    }
+
+    @Bean
+    ModuleService secureTestModules(SecureTestProperties props, LocalStore store, com.securetest.autoconfigure.support.AppRole role) {
+        return new ModuleService(props, store, role);
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    com.securetest.autoconfigure.fleet.FleetService secureTestFleet(SecureTestProperties props, AppContext app,
+            com.securetest.autoconfigure.support.AppRole role, com.securetest.autoconfigure.service.StatusService status,
+            TelemetryService telemetry, FindingService findings, SecretResolver secrets, Environment env,
+            ObjectProvider<com.securetest.autoconfigure.fleet.FleetDiscovery> discovery) {
+        return new com.securetest.autoconfigure.fleet.FleetService(props, app, role, status, telemetry, findings, secrets, env,
+                discovery.orderedStream().toList(),
+                name -> org.springframework.util.ClassUtils.isPresent(name, SecureTestAutoConfiguration.class.getClassLoader()));
+    }
+
+    /** The portfolio report reads the "All services" view (wired after startup to keep bean creation order simple). */
+    @Bean
+    org.springframework.beans.factory.SmartInitializingSingleton secureTestPortfolioReports(ReportService reports,
+            com.securetest.autoconfigure.fleet.FleetService fleet) {
+        return () -> reports.bind(fleet);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.service.IssueTrackerService secureTestIssueTrackers(SecureTestProperties props, SecretResolver secrets, AppContext app) {
+        return new com.securetest.autoconfigure.service.IssueTrackerService(props, secrets, app);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.pentest.EngagementService secureTestEngagements(LocalStore store, FindingService findings, ReportService reports) {
+        com.securetest.autoconfigure.pentest.EngagementService e = new com.securetest.autoconfigure.pentest.EngagementService(store, findings);
+        reports.bind(e);
+        return e;
+    }
+
+    @Bean
+    com.securetest.autoconfigure.asm.AttackSurfaceService secureTestAttackSurface(LocalStore store) {
+        return new com.securetest.autoconfigure.asm.AttackSurfaceService(store);
+    }
+
+    /** Registering a domain authorizes checks of it and its subdomains (wired after startup: scanners depend on the inventory). */
+    @Bean
+    org.springframework.beans.factory.SmartInitializingSingleton secureTestAttackSurfaceTargets(JobService jobs,
+            com.securetest.autoconfigure.asm.AttackSurfaceService inventory) {
+        return () -> jobs.addTargets(inventory::allowlistEntries);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.asm.AttackSurfaceScanner secureTestAttackSurfaceScanner(com.securetest.autoconfigure.asm.AttackSurfaceService inventory,
+                                                                                       NotificationService notifications, SecureTestProperties props) {
+        return new com.securetest.autoconfigure.asm.AttackSurfaceScanner(inventory, notifications, () -> props.getSecurity().isAllowExternalIntelligence());
+    }
+
+    @Bean
+    com.securetest.autoconfigure.disclosure.DisclosureService secureTestDisclosures(SecureTestProperties props, LocalStore store, FindingService findings,
+                                                                                  NotificationService notifications) {
+        return new com.securetest.autoconfigure.disclosure.DisclosureService(props, store, findings, notifications);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.release.ReleaseService secureTestReleases(LocalStore store, com.securetest.autoconfigure.service.StatusService status,
+            FindingService findings, ModuleService modules, ComplianceService compliance,
+            com.securetest.autoconfigure.pentest.EngagementService engagements) {
+        return new com.securetest.autoconfigure.release.ReleaseService(store, status, findings, modules, compliance, engagements);
+    }
+
+    @Bean
+    org.springframework.beans.factory.SmartInitializingSingleton secureTestReleaseReports(ReportService reports,
+            com.securetest.autoconfigure.release.ReleaseService releases) {
+        return () -> reports.bind(releases);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.service.StatusService secureTestStatus(SecureTestProperties props, AppContext app, ModuleService modules,
+                                                                      ScannerRegistry registry, JobService jobs, FindingService findings) {
+        return new com.securetest.autoconfigure.service.StatusService(props, app, modules, registry, jobs, findings);
+    }
 
     @Bean
     FindingService secureTestFindings(SecureTestProperties props, AppContext app, LocalStore store) { return new FindingService(props, app, store); }
@@ -167,6 +247,7 @@ public class SecureTestAutoConfiguration {
     DependencyUpgradeFix secureTestDependencyUpgradeFix() { return new DependencyUpgradeFix(); }
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(com.securetest.ai.AiRemediator.class)
     com.securetest.ai.AiRemediator secureTestAiRemediator(SecureTestProperties props, SecretResolver secrets) {
         SecureTestProperties.Ai ai = props.getAi();
         com.securetest.ai.ModelClient client = null;
@@ -234,8 +315,8 @@ public class SecureTestAutoConfiguration {
 
     @Bean(destroyMethod = "shutdown")
     Housekeeping secureTestHousekeeping(SecureTestProperties props, FindingService findings, JobService jobs, ReportService reports,
-                                        AuditService audit, ScheduleService schedules) {
-        return new Housekeeping(props, findings, jobs, reports, audit, schedules);
+                                        AuditService audit, ScheduleService schedules, LocalStore store) {
+        return new Housekeeping(props, findings, jobs, reports, audit, schedules, store);
     }
 
     // ------------------------------------------------------------------ web
@@ -292,6 +373,8 @@ public class SecureTestAutoConfiguration {
         @Bean ProwlerAdapter secureTestProwler() { return new ProwlerAdapter(); }
         @Bean TrivyAdapter secureTestTrivyImage() { return new TrivyAdapter(ModuleCatalog.CLOUD_SECURITY, "trivy-image"); }
         @Bean RuntimeAlertScanner secureTestRuntimeAlerts() { return new RuntimeAlertScanner(); }
+        @Bean com.securetest.adapters.builtin.LlmCodeScanner secureTestLlmCode() { return new com.securetest.adapters.builtin.LlmCodeScanner(); }
+        @Bean com.securetest.adapters.builtin.PromptInjectionScanner secureTestPromptInjection() { return new com.securetest.adapters.builtin.PromptInjectionScanner(); }
 
         @Bean
         ConfigPostureScanner secureTestConfigPosture(ConfigurableEnvironment env, SecureTestProperties props) {
@@ -308,7 +391,7 @@ public class SecureTestAutoConfiguration {
         HealthSource secureTestActuatorHealth(ObjectProvider<org.springframework.boot.actuate.health.HealthEndpoint> endpoint) {
             return () -> {
                 var ep = endpoint.getIfAvailable();
-                if (ep == null) return Map.of("status", "UNKNOWN", "detail", "Actuator health endpoint not enabled");
+                if (ep == null) return Map.of("status", "UP", "detail", "Application responding; Actuator health endpoint not enabled");
                 var h = ep.health();
                 Map<String, Object> m = new java.util.LinkedHashMap<>();
                 m.put("status", h.getStatus().getCode());
@@ -379,6 +462,35 @@ public class SecureTestAutoConfiguration {
                         if ("SERVER_ERROR".equals(t.getId().getTag("outcome"))) errors += t.count();
                     }
                     return Map.of("count", count, "errors", errors, "meanMs", count == 0 ? 0 : Math.round(totalMs / count * 10) / 10.0, "maxMs", maxMs);
+                }
+            };
+        }
+    }
+
+    /** Spring Cloud service discovery (Eureka, Consul, Kubernetes...) for the "All services" view; only when the app has Spring Cloud. */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.cloud.client.discovery.DiscoveryClient")
+    static class SpringCloudDiscovery {
+
+        @Bean
+        com.securetest.autoconfigure.fleet.FleetDiscovery secureTestSpringCloudDiscovery(
+                ObjectProvider<org.springframework.cloud.client.discovery.DiscoveryClient> client) {
+            return new com.securetest.autoconfigure.fleet.FleetDiscovery() {
+                private com.securetest.autoconfigure.fleet.SpringCloudFleetDiscovery delegate() {
+                    org.springframework.cloud.client.discovery.DiscoveryClient c = client.getIfAvailable();
+                    return c == null ? null : new com.securetest.autoconfigure.fleet.SpringCloudFleetDiscovery(c);
+                }
+
+                @Override
+                public String description() {
+                    var d = delegate();
+                    return d == null ? "Spring Cloud service discovery (no client)" : d.description();
+                }
+
+                @Override
+                public java.util.List<Instance> instances() {
+                    var d = delegate();
+                    return d == null ? java.util.List.of() : d.instances();
                 }
             };
         }

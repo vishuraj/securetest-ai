@@ -8,6 +8,9 @@ public interface GateRequest {
 
     String method();
 
+    /** Raw (still encoded) query string without '?', or null. */
+    default String query() { return null; }
+
     String remoteAddress();
 
     String header(String name);

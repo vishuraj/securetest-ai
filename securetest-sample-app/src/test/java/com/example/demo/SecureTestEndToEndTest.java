@@ -77,12 +77,11 @@ class SecureTestEndToEndTest {
     }
 
     @Test
-    void modulesDefaultOffExceptHealth() {
+    void modulesAreOffUnlessConfigured() {
         List<Map<String, Object>> modules = http.exchange(API + "/modules", HttpMethod.GET, null, LIST).getBody();
-        assertThat(modules).hasSize(12);
+        assertThat(modules).hasSize(15);
         modules.forEach(m -> {
-            if (m.get("id").equals("health")) assertThat(m.get("enabled")).isEqualTo(true);
-            else if (!List.of("code-quality", "compliance", "api-security").contains(m.get("id"))) assertThat(m.get("enabled")).as((String) m.get("id")).isEqualTo(false);
+            if (!List.of("code-quality", "compliance", "api-security").contains(m.get("id"))) assertThat(m.get("enabled")).as((String) m.get("id")).isEqualTo(false);
         });
         Map<String, Object> overview = http.exchange(API + "/overview", HttpMethod.GET, null, MAP).getBody();
         assertThat(overview).containsKeys("application", "runtime", "modules", "findings", "gate");

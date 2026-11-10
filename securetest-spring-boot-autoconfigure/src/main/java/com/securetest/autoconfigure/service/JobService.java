@@ -120,8 +120,17 @@ public class JobService {
 
     // ------------------------------------------------------------------ validation & preflight
 
+    private final java.util.List<java.util.function.Supplier<List<String>>> extraTargets = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Adds allowlist entries owned by a feature (e.g. registered attack-surface domains). */
+    public void addTargets(java.util.function.Supplier<List<String>> source) {
+        extraTargets.add(source);
+    }
+
     TargetGuard guard() {
-        return new AllowlistTargetGuard(props.getSecurity().getTargetAllowlist(), app.selfBaseUrl(), props.getSecurity().isEnforceTargetAllowlist());
+        List<String> entries = new ArrayList<>(props.getSecurity().getTargetAllowlist());
+        extraTargets.forEach(s -> entries.addAll(s.get()));
+        return new AllowlistTargetGuard(entries, app.selfBaseUrl(), props.getSecurity().isEnforceTargetAllowlist());
     }
 
     private Validated validate(ScannerDescriptor d, Map<String, String> input) {
@@ -375,6 +384,14 @@ public class JobService {
             if (critical > 0) {
                 notifications.publish("finding.critical", job.scannerName + " found " + critical + " critical finding(s) in " + app.name(), Map.of("jobId", job.id));
             }
+            // "a new CVE affects you": a vulnerable dependency (High or Critical) seen for the first time
+            List<Finding> newVulns = merged.stream().filter(f -> f.dependency != null && f.occurrences == 1
+                    && (f.priority == null ? f.sourceSeverity : f.priority).atLeast(Severity.HIGH)).toList();
+            if (!newVulns.isEmpty()) {
+                notifications.publish("vulnerability.new", newVulns.size() + " new high/critical vulnerable dependenc" + (newVulns.size() == 1 ? "y" : "ies")
+                        + " in " + app.name() + ": " + newVulns.stream().limit(5).map(f -> f.dependency.packageName + " " + String.join("/", f.dependency.aliases))
+                        .collect(java.util.stream.Collectors.joining(", ")), Map.of("jobId", job.id));
+            }
             notifications.publish("scan.completed", job.scannerName + " completed: " + merged.size() + " finding(s)", Map.of("jobId", job.id));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -396,6 +413,7 @@ public class JobService {
             job.appendLog("Finished with status " + job.status + (job.error != null ? " — " + job.error : ""));
             contexts.remove(job.id);
             futures.remove(job.id);
+            if (job.status != JobStatus.COMPLETED) findings.jobEnded(job);
             audit.record(job.requestedBy, null, "scan.finished", job.id, job.status.name(),
                     Map.of("scanner", job.scannerId, "findings", String.valueOf(job.findingsCount)));
             if (job.status == JobStatus.FAILED) notifications.publish("scan.failed", job.scannerName + " failed: " + job.error, Map.of("jobId", job.id));

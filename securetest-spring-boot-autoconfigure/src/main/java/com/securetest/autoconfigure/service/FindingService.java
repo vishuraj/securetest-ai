@@ -124,6 +124,25 @@ public class FindingService {
                 }
             }
         }
+        for (Finding f : byId.values()) { // retests waiting for this scan
+            Finding.Verification v = f.verification;
+            if (!retestFor(v, job)) continue;
+            v.jobId = job.id;
+            v.completedAt = now;
+            v.verifiedBy = job.scannerName;
+            if (seen.contains(f.fingerprint)) {
+                v.state = "STILL_PRESENT";
+                if (!f.isOpen()) f.status = FindingStatus.OPEN;
+                f.addHistory("system", "RETEST_FAILED", "Still present in retest scan " + job.id);
+            } else if (completeRun) {
+                v.state = "VERIFIED_FIXED";
+                f.status = FindingStatus.FIXED;
+                f.addHistory("system", "VERIFIED_FIXED", "Not detected by retest scan " + job.id);
+            } else {
+                v.state = "INCONCLUSIVE";
+                f.addHistory("system", "RETEST_INCONCLUSIVE", "Retest scan " + job.id + " did not complete fully");
+            }
+        }
         revision.incrementAndGet();
         store.markDirty("findings");
         return result;
@@ -148,6 +167,170 @@ public class FindingService {
         target.complianceTags = fresh.complianceTags;
         target.fixId = fresh.fixId;
         target.attributes.putAll(fresh.attributes);
+    }
+
+    // ------------------------------------------------------------------ retest
+
+    /**
+     * Marks a retest as pending before its scan is submitted (automated: the next complete run of {@code scannerId} settles
+     * it, so a scan that finishes before the job id is attached is not missed) or as waiting for a tester (scannerId null).
+     */
+    public synchronized Finding requestRetest(String id, String scannerId, String actor) {
+        Finding f = get(id);
+        Finding.Verification v = new Finding.Verification();
+        v.state = scannerId == null ? "AWAITING_TESTER" : "PENDING";
+        v.scannerId = scannerId;
+        v.requestedBy = actor;
+        v.requestedAt = Instant.now();
+        f.verification = v;
+        f.addHistory(actor, "RETEST_REQUESTED", scannerId == null ? "Waiting for a tester to verify the fix" : "Retest with " + scannerId);
+        touch();
+        return f;
+    }
+
+    /** Records which scan runs the retest (for display), unless that scan already settled it. */
+    public synchronized Finding attachRetestJob(String id, String jobId) {
+        Finding f = get(id);
+        if (f.verification != null && f.verification.jobId == null) f.verification.jobId = jobId;
+        touch();
+        return f;
+    }
+
+    /** The retest could not be started (e.g. the module is off): nothing will settle it. */
+    public synchronized void retestNotStarted(String id, String reason) {
+        Finding f = get(id);
+        if (f.verification != null && "PENDING".equals(f.verification.state)) {
+            f.verification.state = "INCONCLUSIVE";
+            f.verification.completedAt = Instant.now();
+            f.verification.note = reason;
+            touch();
+        }
+    }
+
+    private static boolean retestFor(Finding.Verification v, ScanJob job) {
+        if (v == null || !"PENDING".equals(v.state)) return false;
+        return job.id.equals(v.jobId) || (v.jobId == null && job.scannerId.equals(v.scannerId))
+                || (job.scannerId.equals(v.scannerId) && v.requestedAt != null && job.createdAt != null && !job.createdAt.isBefore(v.requestedAt));
+    }
+
+    /** A tester's verdict on a retest (manual findings, or overriding an automated result). */
+    public synchronized Finding recordVerification(String id, boolean fixed, String note, String actor) {
+        Finding f = get(id);
+        Finding.Verification v = f.verification == null ? new Finding.Verification() : f.verification;
+        if (v.requestedAt == null) {
+            v.requestedAt = Instant.now();
+            v.requestedBy = actor;
+        }
+        v.state = fixed ? "VERIFIED_FIXED" : "STILL_PRESENT";
+        v.verifiedBy = actor;
+        v.completedAt = Instant.now();
+        v.note = note;
+        f.verification = v;
+        if (fixed) f.status = FindingStatus.FIXED; else if (!f.isOpen()) f.status = FindingStatus.OPEN;
+        f.addHistory(actor, fixed ? "VERIFIED_FIXED" : "RETEST_FAILED", note == null ? "" : note);
+        touch();
+        return f;
+    }
+
+    /** A retest scan that failed or was cancelled leaves its findings' retest inconclusive. */
+    public synchronized void jobEnded(ScanJob job) {
+        boolean changed = false;
+        for (Finding f : byId.values()) {
+            Finding.Verification v = f.verification;
+            if (retestFor(v, job) && (job.id.equals(v.jobId) || v.jobId == null)) {
+                v.state = "INCONCLUSIVE";
+                v.completedAt = Instant.now();
+                v.note = "Retest scan " + job.id + " ended with " + job.status;
+                f.addHistory("system", "RETEST_INCONCLUSIVE", v.note);
+                changed = true;
+            }
+        }
+        if (changed) touch();
+    }
+
+    // ------------------------------------------------------------------ manual findings, comments, attachments, issues
+
+    /** A finding reported by a person (pentest / VAPT / exploratory testing) rather than a scanner. */
+    public record ManualFinding(String moduleId, String title, Severity severity, String category, String asset, String description,
+                                String stepsToReproduce, String impact, String remediation, List<String> references, String evidence,
+                                String cwe, String engagementId, String owner, Instant dueDate) { }
+
+    public synchronized Finding createManual(ManualFinding m, String actor) {
+        if (m.title() == null || m.title().isBlank()) throw ApiException.badRequest("title is required");
+        if (m.title().length() > 300) throw ApiException.badRequest("title is too long (max 300)");
+        Severity sev = m.severity() == null ? Severity.MEDIUM : m.severity();
+        String module = m.moduleId() == null || m.moduleId().isBlank() ? com.securetest.core.model.ModuleCatalog.API_SECURITY : m.moduleId();
+        if (com.securetest.core.model.ModuleCatalog.find(module).isEmpty()) throw ApiException.badRequest("Unknown module " + module);
+        Finding f = Finding.of(module, "manual", m.cwe() == null || m.cwe().isBlank() ? "MANUAL" : clip(m.cwe(), 40), clip(m.title(), 300), sev);
+        f.category = clip(m.category(), 120);
+        f.asset = clip(m.asset(), 500);
+        f.description = clip(m.description(), 20_000);
+        f.stepsToReproduce = clip(m.stepsToReproduce(), 20_000);
+        f.impact = clip(m.impact(), 5_000);
+        f.remediation = clip(m.remediation(), 10_000);
+        f.evidence = clip(m.evidence(), 50_000);
+        if (props.getSecurity().isRedactSecrets()) f.evidence = Redactor.redact(f.evidence);
+        if (m.references() != null) {
+            m.references().stream().filter(r -> r != null && !r.isBlank()).limit(20).forEach(r -> f.references.add(clip(r, 500)));
+        }
+        f.engagementId = m.engagementId();
+        f.owner = m.owner();
+        f.dueDate = m.dueDate();
+        f.confidence = com.securetest.core.model.Enums.Confidence.HIGH; // a person reproduced it
+        f.id = String.format("F-%06d", counter.incrementAndGet());
+        f.fingerprint = "manual:" + f.id;
+        Instant now = Instant.now();
+        f.firstDetected = now;
+        f.lastDetected = now;
+        f.occurrences = 1;
+        f.status = FindingStatus.OPEN;
+        PriorityCalculator.apply(f, new PriorityCalculator.Context(app.productionLike(), props.getApplication().getCriticality()));
+        f.addHistory(actor, "REPORTED", "Reported manually" + (m.engagementId() == null ? "" : " in engagement " + m.engagementId()));
+        byId.put(f.id, f);
+        byFingerprint.put(f.fingerprint, f.id);
+        touch();
+        return f;
+    }
+
+    public synchronized Finding addComment(String id, String text, String actor) {
+        if (text == null || text.isBlank()) throw ApiException.badRequest("Comment text is required");
+        Finding f = get(id);
+        if (f.comments.size() >= 500) throw ApiException.conflict("Too many comments on this finding");
+        Finding.Comment c = new Finding.Comment();
+        c.id = "C-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        c.author = actor;
+        c.at = Instant.now();
+        c.text = clip(props.getSecurity().isRedactSecrets() ? Redactor.redact(text) : text, 10_000);
+        f.comments.add(c);
+        touch();
+        return f;
+    }
+
+    public synchronized Finding addAttachment(String id, Finding.Attachment a) {
+        Finding f = get(id);
+        if (f.attachments.size() >= 50) throw ApiException.conflict("Too many attachments on this finding (max 50)");
+        f.attachments.add(a);
+        f.addHistory(a.uploadedBy, "ATTACHMENT", a.name);
+        touch();
+        return f;
+    }
+
+    public synchronized Finding linkIssue(String id, Finding.IssueLink link, String actor) {
+        Finding f = get(id);
+        f.issues.put(link.tracker, link);
+        f.addHistory(actor, "ISSUE_LINKED", link.tracker + " " + link.key);
+        touch();
+        return f;
+    }
+
+    public synchronized void touch() {
+        revision.incrementAndGet();
+        store.markDirty("findings");
+    }
+
+    private static String clip(String s, int max) {
+        if (s == null) return null;
+        return s.length() > max ? s.substring(0, max) : s;
     }
 
     public Finding get(String id) {

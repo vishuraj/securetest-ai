@@ -52,6 +52,32 @@ public class ReactiveWebConfiguration {
         return new ReactiveGateFilter(gate, dispatcher);
     }
 
+    /** /.well-known/security.txt (RFC 9116), only when the disclosure program is on; served before any host security. */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "securetest.disclosure", name = "enabled", havingValue = "true")
+    WebFilter secureTestSecurityTxtWebFilter(SecureTestProperties props, com.securetest.autoconfigure.support.AppContext app) {
+        class SecurityTxtFilter implements WebFilter, Ordered {
+            @Override
+            public reactor.core.publisher.Mono<Void> filter(ServerWebExchange exchange, org.springframework.web.server.WebFilterChain chain) {
+                var req = exchange.getRequest();
+                if (!com.securetest.autoconfigure.disclosure.SecurityTxt.PATH.equals(req.getPath().pathWithinApplication().value())
+                        || !"GET".equals(req.getMethod().name())) return chain.filter(exchange);
+                java.net.URI u = req.getURI();
+                String origin = u.getScheme() + "://" + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "") + app.contextPath();
+                String body = com.securetest.autoconfigure.disclosure.SecurityTxt.render(props, origin);
+                if (body == null) return chain.filter(exchange);
+                var res = exchange.getResponse();
+                res.getHeaders().set("Content-Type", "text/plain;charset=UTF-8");
+                res.getHeaders().set("Cache-Control", "max-age=86400");
+                return res.writeWith(reactor.core.publisher.Mono.just(res.bufferFactory().wrap(body.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+            }
+
+            @Override
+            public int getOrder() { return Ordered.HIGHEST_PRECEDENCE + 5; }
+        }
+        return new SecurityTxtFilter();
+    }
+
     @Bean
     WebFilter secureTestHttpMetricsWebFilter(TelemetryService telemetry, SecureTestProperties props) {
         String excluded = props.normalizedPath() + "/";

@@ -21,6 +21,7 @@ public class ServletGateRequest implements GateRequest {
     }
 
     @Override public String method() { return req.getMethod(); }
+    @Override public String query() { return req.getQueryString(); }
     @Override public String remoteAddress() { return req.getRemoteAddr(); }
     @Override public String header(String name) { return req.getHeader(name); }
     @Override public String parameter(String name) { return req.getParameter(name); }

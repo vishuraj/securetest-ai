@@ -13,6 +13,7 @@ import com.securetest.autoconfigure.service.NotificationService;
 import com.securetest.autoconfigure.service.PlatformServices.CompatibilityService;
 import com.securetest.autoconfigure.service.PlatformServices.ControlPlaneClient;
 import com.securetest.autoconfigure.service.ScannerRegistry;
+import com.securetest.autoconfigure.service.StatusService;
 import com.securetest.autoconfigure.service.TelemetryService;
 import com.securetest.autoconfigure.support.AppContext;
 import com.securetest.autoconfigure.support.LocalStore;
@@ -65,11 +66,14 @@ public class CoreApiController {
     private final AuditService audit;
     private final LocalStore store;
     private final ApplicationContext context;
+    private final StatusService status;
+    private final com.securetest.autoconfigure.fleet.FleetService fleet;
 
     public CoreApiController(SecureTestProperties props, AppContext app, ModuleService modules, ScannerRegistry registry, JobService jobs,
                              FindingService findings, TelemetryService telemetry, CompatibilityService compatibility,
                              ControlPlaneClient controlPlane, NotificationService notifications, AuditService audit, LocalStore store,
-                             ApplicationContext context) {
+                             ApplicationContext context, StatusService status,
+                             com.securetest.autoconfigure.fleet.FleetService fleet) {
         this.props = props;
         this.app = app;
         this.modules = modules;
@@ -83,6 +87,8 @@ public class CoreApiController {
         this.audit = audit;
         this.store = store;
         this.context = context;
+        this.status = status;
+        this.fleet = fleet;
     }
 
     @GetMapping("/me")
@@ -101,6 +107,7 @@ public class CoreApiController {
                 "aiEnabled", props.getAi().isEnabled() && props.getAi().isDataProcessingApproved(),
                 "aiModel", props.getAi().getModel()));
         m.put("ideLinkTemplate", props.getWorkspace().getIdeLinkTemplate());
+        m.put("architecture", fleet.architecture()); // monolith or microservices: decides whether "All services" is shown
         return m;
     }
 
@@ -183,43 +190,11 @@ public class CoreApiController {
     }
 
     private List<Map<String, Object>> moduleViews() {
-        return ModuleCatalog.MODULES.stream().map(this::moduleView).toList();
+        return status.moduleViews();
     }
 
     private Map<String, Object> moduleView(ModuleInfo info) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", info.id());
-        m.put("name", info.name());
-        m.put("summary", info.summary());
-        m.put("help", info.help());
-        m.put("enabled", modules.isEnabled(info.id()));
-        m.put("locked", modules.isLocked(info.id()));
-        m.put("toggleSource", modules.source(info.id()));
-        m.put("state", state(info.id()));
-        m.put("scanners", registry.descriptors(info.id()).stream().map(ScannerDescriptor::getId).toList());
-        Optional<ScanJob> last = jobs.latestForModule(info.id());
-        m.put("lastRun", last.orElse(null));
-        m.put("lastSuccess", jobs.all().stream().filter(j -> info.id().equals(j.moduleId) && j.status == JobStatus.COMPLETED)
-                .map(j -> j.endedAt).max(Comparator.naturalOrder()).orElse(null));
-        m.put("lastFailure", jobs.all().stream().filter(j -> info.id().equals(j.moduleId) && j.status == JobStatus.FAILED)
-                .map(j -> j.endedAt).max(Comparator.naturalOrder()).orElse(null));
-        m.put("openFindings", findings.openCounts(info.id()));
-        m.put("settings", modules.settings(info.id()));
-        return m;
-    }
-
-    private ModuleState state(String id) {
-        if (!modules.isEnabled(id)) return ModuleState.DISABLED;
-        if (Set.of(ModuleCatalog.MIGRATION).contains(id) && app.sourceRoot().isEmpty()) return ModuleState.NOT_CONFIGURED;
-        List<ScanJob> mine = jobs.all().stream().filter(j -> id.equals(j.moduleId)).toList();
-        if (mine.stream().anyMatch(j -> j.status == JobStatus.RUNNING)) return ModuleState.RUNNING;
-        if (mine.stream().anyMatch(j -> j.status == JobStatus.QUEUED || j.status == JobStatus.AWAITING_APPROVAL)) return ModuleState.QUEUED;
-        Map<Severity, Integer> open = findings.openCounts(id);
-        if (open.getOrDefault(Severity.CRITICAL, 0) + open.getOrDefault(Severity.HIGH, 0) > 0) return ModuleState.NEEDS_ATTENTION;
-        Optional<ScanJob> last = mine.stream().max(Comparator.comparing(j -> j.createdAt));
-        if (last.isPresent() && last.get().status == JobStatus.FAILED) return ModuleState.FAILED;
-        if (last.isPresent() && last.get().status == JobStatus.COMPLETED) return ModuleState.COMPLETED;
-        return ModuleState.READY;
+        return status.moduleView(info);
     }
 
     // ------------------------------------------------------------------ scanners
@@ -302,19 +277,7 @@ public class CoreApiController {
     @GetMapping("/gate")
     public Map<String, Object> gate(SecureTestPrincipal principal) {
         Authz.require(principal, Permission.VIEW);
-        Map<Severity, Integer> open = findings.openCounts(null);
-        int crit = open.getOrDefault(Severity.CRITICAL, 0);
-        int high = open.getOrDefault(Severity.HIGH, 0);
-        List<String> reasons = new ArrayList<>();
-        if (crit > props.getPolicy().getMaxCritical()) reasons.add(crit + " open critical finding(s) (max " + props.getPolicy().getMaxCritical() + ")");
-        Severity failOn = Severity.valueOf(props.getPolicy().getFailOn());
-        if (failOn.rank() <= Severity.HIGH.rank() && high > props.getPolicy().getMaxHigh()) reasons.add(high + " open high finding(s) (max " + props.getPolicy().getMaxHigh() + ")");
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("status", reasons.isEmpty() ? "PASS" : "FAIL");
-        m.put("reasons", reasons);
-        m.put("open", open);
-        m.put("evaluatedAt", Instant.now());
-        return m;
+        return status.gate();
     }
 
     @GetMapping("/notifications")

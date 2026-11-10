@@ -3,13 +3,19 @@
 
 const NAV = [
   { sep: 'Dashboard' },
+  { hash: '#/fleet', label: 'All services', fleet: true },
   { hash: '#/overview', label: 'Overview' },
   { hash: '#/findings', label: 'Findings', count: true },
   { hash: '#/scans', label: 'Scans' },
+  { hash: '#/assistant', label: '✦ Security assistant', ai: true },
   { sep: 'Modules' },
-  ...['health', 'metrics', 'testing', 'code-quality', 'vulnerability', 'api-security', 'performance', 'compliance', 'network-security', 'advanced-security', 'cloud-security', 'migration']
+  ...['health', 'metrics', 'testing', 'code-quality', 'vulnerability', 'api-security', 'performance', 'compliance', 'network-security', 'advanced-security', 'cloud-security', 'migration', 'pentest', 'attack-surface', 'ai-security']
     .map(id => ({ module: id, hash: '#/module/' + id })),
   { sep: 'Governance' },
+  { hash: '#/releases', label: 'Releases' },
+  { hash: '#/engagements', label: 'Pentest engagements' },
+  { hash: '#/attack-surface', label: 'Attack surface' },
+  { hash: '#/disclosures', label: 'Vulnerability reports' },
   { hash: '#/compliance', label: 'Compliance' },
   { hash: '#/migration', label: 'Migration workflow' },
   { hash: '#/reports', label: 'Reports' },
@@ -24,6 +30,8 @@ function renderNav() {
   const current = location.hash.split('?')[0] || '#/overview';
   clear(list);
   NAV.forEach(item => {
+    if (item.fleet && !ST.fleet.enabled()) return; // monolith: no combined view
+    if (item.ai && !aiEnabled()) return; // AI is opt-in
     if (item.sep) { list.appendChild(el('li', { class: 'sep', 'aria-hidden': 'true' }, item.sep)); return; }
     const m = item.module ? ST.modules.find(x => x.id === item.module) : null;
     const label = m ? m.name : item.label;
@@ -56,7 +64,7 @@ ST.route = async function route() {
   const fn = ST.pages[page];
   if (!fn) { clear(view).appendChild(empty('Page not found')); return; }
   clear(view).appendChild(el('p', { class: 'muted' }, 'Loading…'));
-  document.title = (page === 'module' ? moduleName(id) : page.charAt(0).toUpperCase() + page.slice(1)) + ' · SecureTest AI';
+  document.title = (page === 'module' ? moduleName(id) : page === 'fleet' ? 'All services' : page.charAt(0).toUpperCase() + page.slice(1)) + ' · SecureTest AI';
   try {
     await fn(view, id, params);
   } catch (e) {
@@ -92,11 +100,12 @@ async function boot() {
   clear(document.getElementById('userBox')).append(
     el('span', { class: 'avatar', 'aria-hidden': 'true' }, ST.me.name.charAt(0).toUpperCase()),
     el('span', null, el('div', null, ST.me.name), el('div', { class: 'small muted' }, ST.me.roles.join(', ').toLowerCase())),
-    ST.me.authMethod === 'oidc' ? el('a', { class: 'btn small', href: ST.base + '/oidc/logout' }, 'Sign out') : null);
+    ST.me.authMethod === 'oidc' ? el('a', { class: 'btn small', href: ST.base + '/oidc/logout' }, 'Sign out') : '');
   if (ST.me.authMethod === 'local-dev') {
     document.getElementById('banner').appendChild(el('div', { class: 'alert info small', style: { marginBottom: '14px' } },
       'Local development access: loopback clients act as administrator. Configure basic or container authentication before exposing the dashboard on a network.'));
   }
+  ST.fleet.banner();
   if (ST.me.policy.productionLike) {
     document.getElementById('banner').appendChild(el('div', { class: 'alert warn small', style: { marginBottom: '14px' } }, 'Production-like profile: source changes are disabled and active scans need approval.'));
   }
@@ -110,7 +119,7 @@ async function boot() {
     }
   } catch (e) { /* view will report */ }
   window.addEventListener('hashchange', ST.route);
-  if (!location.hash) location.hash = '#/overview'; else ST.route();
+  if (!location.hash) location.hash = ST.fleet.enabled() ? '#/fleet' : '#/overview'; else ST.route();
 }
 
 boot();

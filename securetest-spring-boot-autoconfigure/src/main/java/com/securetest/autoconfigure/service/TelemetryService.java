@@ -76,6 +76,11 @@ public class TelemetryService {
         }
     }
 
+    /** True while the background metrics sampler is scheduled (only when the Runtime Metrics module is on). */
+    public synchronized boolean sampling() {
+        return task != null;
+    }
+
     public boolean httpRecording() {
         return modules.isEnabled(ModuleCatalog.METRICS);
     }

@@ -58,6 +58,33 @@ public class ServletWebConfiguration {
         return reg;
     }
 
+    /** /.well-known/security.txt (RFC 9116), only when the disclosure program is on; served before any host security. */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(prefix = "securetest.disclosure", name = "enabled", havingValue = "true")
+    FilterRegistrationBean<OncePerRequestFilter> secureTestSecurityTxtFilter(SecureTestProperties props) {
+        OncePerRequestFilter f = new OncePerRequestFilter() {
+            @Override
+            protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain) throws ServletException, IOException {
+                String origin = req.getScheme() + "://" + req.getServerName()
+                        + ((req.getServerPort() == 80 && "http".equals(req.getScheme())) || (req.getServerPort() == 443 && "https".equals(req.getScheme())) ? "" : ":" + req.getServerPort())
+                        + req.getContextPath();
+                String body = com.securetest.autoconfigure.disclosure.SecurityTxt.render(props, origin);
+                if (body == null || !"GET".equals(req.getMethod())) {
+                    chain.doFilter(req, res);
+                    return;
+                }
+                res.setContentType("text/plain;charset=UTF-8");
+                res.setHeader("Cache-Control", "max-age=86400");
+                res.getWriter().write(body);
+            }
+        };
+        FilterRegistrationBean<OncePerRequestFilter> reg = new FilterRegistrationBean<>(f);
+        reg.addUrlPatterns(com.securetest.autoconfigure.disclosure.SecurityTxt.PATH);
+        reg.setName("secureTestSecurityTxt");
+        reg.setOrder(org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 5);
+        return reg;
+    }
+
     @Bean
     FilterRegistrationBean<OncePerRequestFilter> secureTestHttpMetricsFilter(TelemetryService telemetry, SecureTestProperties props) {
         String excluded = props.normalizedPath() + "/";

@@ -71,6 +71,12 @@ has something to find, and the migration workflow has something to migrate.
 | Advanced Security | Falco / Wazuh / SIEM import, sensor health, webhook ingestion | — |
 | Cloud / Kubernetes | Dockerfile, Kubernetes/Helm, Compose, Terraform rules | Checkov, Trivy (image/config), Prowler (AWS/Azure/GCP) |
 | Migration | Discover → assess → plan → per-file diff → apply → validate → commit/undo (Java 17/21/25, Boot 3.5/4.1, javax→jakarta, Spring Security 6, property renames, wrappers, images) | — |
+| Pentest / VAPT | Engagements: scope, rules of engagement, testers, dates, methodology checklist (OWASP WSTG categories, API Top 10 2023, MASVS v2, network), findings, retest phase, engagement report and completion letter | — |
+| Attack Surface | Register domains/hosts; discover subdomains; check HTTPS, redirects, certificate expiry, version banners and exposed admin/CI tools; daily monitoring; alerts for new hosts, expiring certificates and new high/critical CVEs | crt.sh certificate logs (opt-in) |
+| AI / LLM Security | OWASP Top 10 for LLM Applications: LLM SDK inventory, hard-coded model keys, user input in system prompts, model output to exec/SQL/HTML, risky tools, prompts in logs, token limits; active prompt-injection test of your chat endpoint | — |
+
+**Every module is off by default**, Health included. A tester, developer or manager switches on what they need in the dashboard
+(or in configuration, e.g. from a config server).
 
 Cross-cutting: findings with a normalized priority and the preserved source severity ("why this priority?"), dedupe by fingerprint, regression
 detection, governed exceptions (reason, owner, expiry, approver), code highlighting that detects stale files, rule-based fixes as diff-first
@@ -78,6 +84,130 @@ change sets with a rollback point and undo with conflict detection, opt-in AI-as
 saved profiles, a hash-chained audit log, webhooks (Slack/Teams/generic) and e-mail, a release gate (`GET /securetest/api/v1/gate`) and an OpenAPI document for its own API.
 
 You can add your own scanner by declaring a `@Bean` that implements `com.securetest.core.spi.Scanner`. Your own fix provider is a `@Bean` that implements `FixProvider`.
+
+## Safe to ship in production
+
+The dependency can stay in your production build. Until someone uses SecureTest:
+
+* every module is off, and nothing runs in the background: no scheduler, no metrics sampler, no request timing, no outbound
+  calls, no data written (the data store only writes after a change; housekeeping starts on first use);
+* the public parts (`/.well-known/security.txt` and the disclosure form) do not exist unless you turn the disclosure program on;
+* the dashboard and its API need sign-in from any other machine and always under a `prod` profile;
+* per request of your application, SecureTest only checks whether the path is the dashboard's and whether Runtime Metrics is on.
+
+Measured with the sample app (Spring Boot 3.5, Java 25, Windows; 3 starts each, all modules off) against the same app with
+`securetest.enabled=false`: about +1.1 MB heap after a full GC, about 600 more loaded classes, no extra threads, and
+roughly 1–2 s more startup (mostly Spring wiring SecureTest's endpoints). `ZeroFootprintTest` and the compatibility app
+check the "no background work" part on every build. To remove SecureTest entirely from an environment,
+set `securetest.enabled=false`.
+
+## Team workflows
+
+Everything below runs only when someone uses it. It is for your own testers, developers, security staff and managers, not
+for your application's end users.
+
+* **Retest and verified fixes.** *Retest* on a finding re-runs the scanner that found it. If the issue is gone, the finding is
+  **verified fixed**; if not, it is marked **still present**. Findings reported by people wait for a tester's verdict.
+* **Findings from testers.** *Report finding* records a manual finding (pentest, exploratory testing) with steps to reproduce,
+  impact, CWE and evidence. Secrets are redacted. Findings have comments and evidence attachments (screenshots, HAR, logs, PDF;
+  5 MB each).
+* **Jira and GitHub issues.** One click creates an issue from a finding; *Refresh* reads its state. The issue text is redacted
+  and never contains raw evidence.
+  ```yaml
+  securetest:
+    integrations:
+      jira:   { url: https://acme.atlassian.net, project-key: SEC, email: qa@acme.com }   # token: SECURETEST_JIRA_TOKEN
+      github: { repository: acme/shop }                                              # token: SECURETEST_GITHUB_TOKEN
+  ```
+* **Pentest engagements** (Pentest / VAPT module). Plan, test against the checklist, report findings into the engagement,
+  move to *Retest* (every open finding is queued for retest), complete, and export the engagement report or completion letter.
+* **Release readiness.** A release gets live checks (release gate, critical vulnerabilities, code quality, tests,
+  performance, compliance, linked pentest), a checklist, waivers that need a reason, and sign-off by role (QA, Security and
+  Owner by default). Approval freezes the evidence; the readiness report is the record.
+* **Security assistant.** With AI on (`securetest.ai.enabled` and `data-processing-approved`), ask what findings mean, what to
+  fix first or how to fix one. Findings are redacted before they are sent, and the assistant treats finding text as data.
+* **Vulnerability disclosure program** (off by default). Publishes `/.well-known/security.txt` (RFC 9116) and a no-JavaScript
+  report form for outside security researchers, with spam and rate protection. Reports arrive in a triage queue; accepting one
+  creates a finding. No bounty payments.
+  ```yaml
+  securetest:
+    disclosure:
+      enabled: true
+      contact: [mailto:security@acme.com]
+      policy: https://acme.com/security-policy
+  ```
+* **Agency / multi-client workspace.** In the *All services* view, give each service a client and, if each client has its own
+  secret, that client's token. The page then groups services by client, and the *Portfolio report* covers all of them.
+  ```yaml
+  securetest:
+    fleet:
+      members:
+        - { name: api, client: Acme,   url: https://api.acme.example,   token-ref: env://ACME_FLEET_TOKEN }
+        - { name: api, client: Globex, url: https://api.globex.example, token-ref: env://GLOBEX_FLEET_TOKEN }
+  ```
+
+## Monoliths and microservices
+
+SecureTest works out which kind of system it is in, and the dashboard adapts:
+
+| Your system | What you add | What you get |
+|---|---|---|
+| **Monolith** (one Spring Boot app, any number of Maven/Gradle modules) | The dependency in the app's POM, or in the parent POM | One dashboard at `/securetest` with every module |
+| **Microservices** (one repo with a parent POM) | The dependency **once**, in the parent POM's `<dependencies>` | Every service gets its own dashboard **plus** an **All services** page |
+
+**Microservices: one dependency for every service.** In the parent POM:
+
+```xml
+<dependencies>
+  <dependency>
+    <groupId>io.github.vishuraj</groupId>
+    <artifactId>securetest-spring-boot-starter</artifactId>
+    <version>1.0.1</version>
+  </dependency>
+</dependencies>
+```
+
+Each module then behaves correctly on its own:
+
+* **Business services** get every module: testing, code quality, vulnerabilities, API security, performance, compliance, health.
+* **Spring Cloud infrastructure** (Config Server, Eureka server, Spring Cloud Gateway, Spring Boot Admin) is detected and runs
+  as *infra*: health, metrics, performance and security checks, without the source-code modules (testing, code quality,
+  migration). Override with `securetest.role: service` or `infra`.
+* **Shared libraries** (modules that are not web applications) are untouched: nothing starts.
+
+**All services.** The page appears automatically when SecureTest finds a microservice system. The signals are a service
+registry client (Eureka, Consul, Zookeeper, Nacos, Kubernetes), a Spring Cloud Config client, a Spring Cloud infrastructure
+app, other services found by discovery, or services you list yourself. In a monolith it never appears. Open it from any
+service's dashboard. It shows every service and instance with health, requests per second, p95 latency, error rate,
+release gate, open critical/high findings and the state of each module. **Open** shows that service's own dashboard
+through the one you are on, with the same sign-in, so a single URL covers the whole system.
+
+* **Finding the services:** Spring Cloud service discovery is used when the app has it (Eureka, Consul, Kubernetes...).
+  Without it, list them:
+  ```yaml
+  securetest:
+    fleet:
+      members:
+        - { name: orders, url: http://orders:8081 }
+        - { name: users,  url: http://users:8082 }
+  ```
+* **Trust between services:** give every service the same secret in `SECURETEST_FLEET_TOKEN` (an environment variable,
+  `.env`, or your config server). Services on one machine work without it. The token lets one service act for its signed-in
+  user on the others, so treat it like an admin password.
+* **Shared settings in one place:** with a Spring Cloud Config Server, put SecureTest settings in its shared
+  `application.yml` and every service picks them up. For example:
+  ```yaml
+  securetest:
+    modules:
+      metrics: { enabled: true }        # request rate and latency on the All services page
+    dashboard:
+      authentication:
+        provider: basic                 # or oidc
+        users:
+          - { username: admin, password: "{env}SECURETEST_ADMIN_PW", roles: [ADMIN] }
+  ```
+* **Drill-down paths:** a service's dashboard is reached at `/securetest/fleet/<service>/`. A service whose dashboard
+  lives at a different path can publish it in its registry metadata as `securetest-path`.
 
 ## Security model (secure by default)
 
@@ -130,6 +260,24 @@ securetest:
         roles-claim: realm_access.roles                   # dot path into the ID token
         default-role: VIEWER                              # unset = deny unmapped users
         session-timeout: 8h
+  role: auto                        # auto | service | infra (infra = no testing/code-quality/migration)
+  fleet:
+    enabled: auto                   # auto: All services page only in a microservice system | true | false
+    token-ref: env://SECURETEST_FLEET_TOKEN   # same secret on every service
+    discovery: true                 # use Spring Cloud service discovery when present
+    members: []                     # [{name, url}] when there is no service discovery
+    timeout: 3s
+    cache-ttl: 10s
+    client: null                    # this app's client name (agency workspaces)
+  integrations:                     # Jira / GitHub issues, used only on request
+    jira: { url: null, project-key: null, email: null, token-ref: env://SECURETEST_JIRA_TOKEN, issue-type: Bug, api-version: 3 }
+    github: { repository: null, api-url: https://api.github.com, token-ref: env://SECURETEST_GITHUB_TOKEN }
+  disclosure:                       # vulnerability disclosure program (public), off by default
+    enabled: false
+    contact: []
+    form: true
+    expires-after: 180d
+    reports-per-hour: 5
   control-plane:
     enabled: false
     url: https://securetest.example.com

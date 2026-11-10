@@ -3,7 +3,10 @@ package com.securetest.core.model;
 import java.util.List;
 import java.util.Optional;
 
-/** The feature modules shown in the navigation (SRS 5.2). Every module is independently toggleable. */
+/**
+ * The feature modules shown in the navigation (SRS 5.2). Every module is independently toggleable and every module is OFF by
+ * default, so adding the dependency costs nothing at runtime until a tester, developer or manager switches one on.
+ */
 public final class ModuleCatalog {
 
     public record ModuleInfo(String id, String name, String summary, boolean defaultEnabled, String help) { }
@@ -20,9 +23,12 @@ public final class ModuleCatalog {
     public static final String ADVANCED_SECURITY = "advanced-security";
     public static final String CLOUD_SECURITY = "cloud-security";
     public static final String MIGRATION = "migration";
+    public static final String PENTEST = "pentest";
+    public static final String ATTACK_SURFACE = "attack-surface";
+    public static final String AI_SECURITY = "ai-security";
 
     public static final List<ModuleInfo> MODULES = List.of(
-            new ModuleInfo(HEALTH, "Health", "Application health and baseline JVM snapshot.", true,
+            new ModuleInfo(HEALTH, "Health", "Application health and baseline JVM snapshot.", false,
                     "Reads health indicators and JVM MXBeans on demand. No background polling."),
             new ModuleInfo(METRICS, "Runtime Metrics", "Sampled CPU, memory, GC, thread and HTTP metrics with history and thresholds.", false,
                     "When enabled, a low-frequency sampler records metric history and HTTP request timings."),
@@ -45,7 +51,13 @@ public final class ModuleCatalog {
             new ModuleInfo(CLOUD_SECURITY, "Cloud / Kubernetes", "Dockerfile, Kubernetes, Compose and Terraform checks; Checkov, Trivy and Prowler adapters.", false,
                     "Cloud account checks use your installed tools and least-privilege read-only credentials."),
             new ModuleInfo(MIGRATION, "Migration", "Java, Spring Boot, javax→jakarta and build modernization with diff, apply and undo.", false,
-                    "Analysis never changes files. Applying changes needs policy opt-in, approval and a rollback point.")
+                    "Analysis never changes files. Applying changes needs policy opt-in, approval and a rollback point."),
+            new ModuleInfo(PENTEST, "Pentest / VAPT", "Penetration-test engagements: scope, testers, methodology checklist, findings, retest and completion report.", false,
+                    "Bookkeeping for manual testing. Nothing runs in the background; testers report findings and verify fixes."),
+            new ModuleInfo(ATTACK_SURFACE, "Attack Surface", "External asset inventory: domains, subdomains, exposed services, certificates and new-CVE alerts.", false,
+                    "Only checks domains and hosts you register. Certificate-transparency lookups are an explicit opt-in that calls crt.sh."),
+            new ModuleInfo(AI_SECURITY, "AI / LLM Security", "OWASP Top 10 for LLM applications: risky LLM usage in code and prompt-injection tests of your AI endpoints.", false,
+                    "Code checks are local. Endpoint tests are active: they need an allowlisted target, confirmation and approval.")
     );
 
     private ModuleCatalog() { }

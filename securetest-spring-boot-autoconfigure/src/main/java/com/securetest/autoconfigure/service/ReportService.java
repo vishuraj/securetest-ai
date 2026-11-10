@@ -53,6 +53,10 @@ public class ReportService {
         TYPES.put("compliance", "Compliance evidence report");
         TYPES.put("migration", "Migration assessment and execution report");
         TYPES.put("remediation", "Remediation progress and SLA report");
+        TYPES.put("pentest", "Penetration test engagement report");
+        TYPES.put("attestation", "Penetration test completion letter");
+        TYPES.put("portfolio", "Portfolio report across services and clients");
+        TYPES.put("release", "Release readiness and sign-off record");
     }
 
     public static class Report {
@@ -72,7 +76,8 @@ public class ReportService {
     }
 
     // Boxed so a missing JSON field means false on every Jackson version (Jackson 3 rejects null for primitives).
-    public record Request(String type, String title, List<String> modules, String minPriority, Boolean includeClosed, String migrationId) {
+    public record Request(String type, String title, List<String> modules, String minPriority, Boolean includeClosed, String migrationId,
+                          String engagementId, String releaseId) {
         public Request {
             includeClosed = Boolean.TRUE.equals(includeClosed);
         }
@@ -129,6 +134,16 @@ public class ReportService {
         if (req.minPriority() != null) r.filters.put("minPriority", req.minPriority());
         r.filters.put("includeClosed", String.valueOf(req.includeClosed()));
         if (req.migrationId() != null) r.filters.put("migrationId", req.migrationId());
+        if (req.engagementId() != null) r.filters.put("engagementId", req.engagementId());
+        if (req.releaseId() != null) r.filters.put("releaseId", req.releaseId());
+        if (r.type.equals("release")) {
+            if (releases == null || req.releaseId() == null) throw ApiException.badRequest("releaseId is required for release reports");
+            releases.get(req.releaseId());
+        }
+        if ((r.type.equals("pentest") || r.type.equals("attestation")) && (engagements == null || req.engagementId() == null)) {
+            throw ApiException.badRequest("engagementId is required for " + r.type + " reports");
+        }
+        if (engagements != null && req.engagementId() != null) engagements.get(req.engagementId());
         reports.put(r.id, r);
         store.markDirty("reports");
         audit.record(p, "report.requested", r.id, "GENERATING", Map.of("type", r.type));
@@ -181,6 +196,9 @@ public class ReportService {
         d.snapshotVersion = "findings-rev-" + findings.revision() + " @ " + Instant.now();
         d.generatedAt = Instant.now();
 
+        if (r.type.equals("pentest") || r.type.equals("attestation")) return engagementReport(r, req, d);
+        if (r.type.equals("portfolio")) return portfolioReport(d);
+        if (r.type.equals("release")) return releaseReport(req, d);
         Set<String> scope = scopeModules(r.type, req.modules());
         Severity min = req.minPriority() == null ? Severity.INFO : Severity.valueOf(req.minPriority());
         List<Finding> list = findings.all().stream()
@@ -243,6 +261,138 @@ public class ReportService {
         recommendations(d, list);
         d.limitations.add("Embedded runtime analysis cannot see build-time artifacts; source checks cover the configured workspace only.");
         d.limitations.add("Findings reflect the state at the data snapshot " + d.snapshotVersion + ".");
+        return d;
+    }
+
+    // ------------------------------------------------------------------ pentest engagements
+
+    private com.securetest.autoconfigure.pentest.EngagementService engagements;
+
+    public void bind(com.securetest.autoconfigure.pentest.EngagementService engagements) {
+        this.engagements = engagements;
+    }
+
+    private com.securetest.autoconfigure.fleet.FleetService fleet;
+    private com.securetest.autoconfigure.release.ReleaseService releases;
+
+    public void bind(com.securetest.autoconfigure.release.ReleaseService releases) {
+        this.releases = releases;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ReportDocument releaseReport(Request req, ReportDocument d) {
+        var rel = releases.get(req.releaseId());
+        Map<String, Object> ready = releases.readiness(rel);
+        List<com.securetest.autoconfigure.release.ReleaseService.Check> checks = (List<com.securetest.autoconfigure.release.ReleaseService.Check>) ready.get("checks");
+        d.findings = new ArrayList<>(findings.all().stream().filter(Finding::isOpen)
+                .filter(f -> (f.priority == null ? f.sourceSeverity : f.priority).atLeast(Severity.HIGH)).toList());
+        for (Severity s : Severity.values()) d.severityCounts.put(s, 0);
+        findings.all().stream().filter(Finding::isOpen).forEach(f -> d.severityCounts.merge(f.priority == null ? f.sourceSeverity : f.priority, 1, Integer::sum));
+        d.scope = "Release " + rel.version + (rel.name == null ? "" : " (" + rel.name + ")") + " of " + app.name() + ".";
+        d.executiveSummary = "Status: " + rel.status + ". " + (Boolean.TRUE.equals(ready.get("ready")) ? "All required checks passed or were waived. "
+                : "Blocked by: " + String.join("; ", (List<String>) ready.get("blockers")) + ". ")
+                + rel.signoffs.size() + " sign-off(s) recorded" + (rel.approvedAt == null ? "." : "; approved " + rel.approvedAt + ".");
+        d.metadata.put("Release", rel.id + " / " + rel.version);
+        d.metadata.put("Target date", String.valueOf(rel.targetDate));
+        d.metadata.put("Required sign-offs", String.join(", ", rel.requiredSignoffs));
+        d.addTable("Readiness Checks", List.of("Check", "Required", "Result", "Detail"),
+                checks.stream().map(c -> List.of(c.title(), c.required() ? "yes" : "no", c.state(), c.detail())).toList());
+        if (!rel.items.isEmpty()) {
+            d.addTable("Checklist", List.of("Item", "Done", "By"), rel.items.stream().map(i -> List.of(i.title, i.done ? "yes" : "no",
+                    String.valueOf(i.by == null ? "" : i.by))).toList());
+        }
+        d.addTable("Sign-offs", List.of("Role", "User", "Decision", "When", "Comment"),
+                rel.signoffs.stream().map(s -> List.of(s.role, s.user, s.decision, String.valueOf(s.at), String.valueOf(s.comment == null ? "" : s.comment))).toList());
+        if (!rel.waivers.isEmpty()) {
+            d.addTable("Waivers", List.of("Check", "Reason", "By", "When"),
+                    rel.waivers.entrySet().stream().map(e -> List.of(e.getKey(), e.getValue().reason, e.getValue().by, String.valueOf(e.getValue().at))).toList());
+        }
+        remediationTable(d, d.findings);
+        return d;
+    }
+
+    public void bind(com.securetest.autoconfigure.fleet.FleetService fleet) {
+        this.fleet = fleet;
+    }
+
+    /** Agency / portfolio view: every client and service of the system, from the "All services" data. */
+    @SuppressWarnings("unchecked")
+    private ReportDocument portfolioReport(ReportDocument d) {
+        Map<String, Object> view = fleet == null ? Map.of() : fleet.view(true);
+        List<Map<String, Object>> services = (List<Map<String, Object>>) view.getOrDefault("services", List.of());
+        List<Map<String, Object>> clients = (List<Map<String, Object>>) view.getOrDefault("clients", List.of());
+        Map<String, Object> totals = (Map<String, Object>) view.getOrDefault("totals", Map.of());
+        d.findings = new ArrayList<>();
+        for (Severity s : Severity.values()) d.severityCounts.put(s, 0);
+        d.severityCounts.put(Severity.CRITICAL, num(totals.get("openCritical")));
+        d.severityCounts.put(Severity.HIGH, num(totals.get("openHigh")));
+        d.scope = (clients.isEmpty() ? "" : clients.size() + " client(s), ") + services.size() + " service(s) and " + num(totals.get("instances"))
+                + " instance(s) reachable from " + app.name() + ".";
+        d.executiveSummary = num(totals.get("reporting")) + " of " + num(totals.get("instances")) + " instances reported. " + num(totals.get("down"))
+                + " are down or unreachable; " + num(totals.get("gateFailing")) + " service(s) fail their release gate; " + num(totals.get("openCritical"))
+                + " critical and " + num(totals.get("openHigh")) + " high findings are open across the portfolio.";
+        if (!clients.isEmpty()) {
+            d.addTable("Clients", List.of("Client", "Services", "Instances", "Down", "Gate failing", "Critical", "High"),
+                    clients.stream().map(c -> List.of(String.valueOf(c.get("name")), String.valueOf(c.get("services")), String.valueOf(c.get("instances")),
+                            String.valueOf(c.get("down")), String.valueOf(c.get("gateFailing")), String.valueOf(c.get("openCritical")),
+                            String.valueOf(c.get("openHigh")))).toList());
+        }
+        d.addTable("Services", List.of("Client", "Service", "Role", "Instances up", "Health", "Release gate", "Critical", "High", "p95 (ms)", "Errors %"),
+                services.stream().map(s -> List.of(String.valueOf(s.get("client") == null ? "" : s.get("client")), String.valueOf(s.get("name")),
+                        String.valueOf(s.get("role")), s.get("up") + " / " + s.get("total"), String.valueOf(s.get("health")),
+                        String.valueOf(s.get("gate") == null ? "-" : s.get("gate")), String.valueOf(s.get("openCritical")), String.valueOf(s.get("openHigh")),
+                        Boolean.TRUE.equals(s.get("httpRecording")) ? String.valueOf(s.get("p95Ms")) : "-",
+                        Boolean.TRUE.equals(s.get("httpRecording")) ? String.valueOf(s.get("errorRatePercent")) : "-")).toList());
+        d.addTable("Modules", List.of("Client", "Service", "Enabled modules and state"),
+                services.stream().map(s -> List.of(String.valueOf(s.get("client") == null ? "" : s.get("client")), String.valueOf(s.get("name")),
+                        ((List<Map<String, Object>>) s.getOrDefault("modules", List.of())).stream().filter(m -> Boolean.TRUE.equals(m.get("enabled")))
+                                .map(m -> m.get("name") + ": " + m.get("state")).collect(java.util.stream.Collectors.joining(", ")))).toList());
+        d.limitations.add("Services that did not answer (no SecureTest, wrong token, unreachable) are listed without data.");
+        return d;
+    }
+
+    private static int num(Object o) {
+        return o instanceof Number n ? n.intValue() : 0;
+    }
+
+    private ReportDocument engagementReport(Report r, Request req, ReportDocument d) {
+        var e = engagements.get(req.engagementId());
+        Map<String, Object> progress = engagements.progress(e.id);
+        List<Finding> list = new ArrayList<>(engagements.findingsOf(e.id));
+        d.findings = r.type.equals("attestation") ? new ArrayList<>() : new ArrayList<>(list);
+        for (Severity s : Severity.values()) d.severityCounts.put(s, 0);
+        list.forEach(f -> d.severityCounts.merge(f.priority == null ? f.sourceSeverity : f.priority, 1, Integer::sum));
+        long fixed = list.stream().filter(f -> f.verification != null && "VERIFIED_FIXED".equals(f.verification.state)).count();
+        long open = list.stream().filter(Finding::isOpen).count();
+        d.scope = "Engagement " + e.id + " \u2014 " + e.name + " (" + e.type + "). In scope: " + String.join(", ", e.scope)
+                + (e.outOfScope.isEmpty() ? "" : ". Out of scope: " + String.join(", ", e.outOfScope)) + ".";
+        String period = (e.startDate == null ? "?" : e.startDate.toString()) + " to " + (e.endDate == null ? "?" : e.endDate.toString());
+        d.executiveSummary = (r.type.equals("attestation")
+                ? "This letter confirms that a penetration test of the scope below was performed between " + period
+                + " following the " + com.securetest.autoconfigure.pentest.ChecklistTemplates.METHODOLOGIES.get(e.methodology) + " checklist. "
+                : "Penetration test performed between " + period + ". ")
+                + list.size() + " finding(s) were reported: " + d.severityCounts.get(Severity.CRITICAL) + " critical, " + d.severityCounts.get(Severity.HIGH)
+                + " high, " + d.severityCounts.get(Severity.MEDIUM) + " medium, " + d.severityCounts.get(Severity.LOW) + " low, "
+                + d.severityCounts.get(Severity.INFO) + " informational. " + fixed + " were verified fixed by retest and " + open + " remain open. "
+                + "Checklist coverage: " + progress.get("coveragePercent") + "%." + (e.summary == null ? "" : " " + e.summary);
+        d.metadata.put("Engagement", e.id + " \u2014 " + e.name);
+        d.metadata.put("Status", e.status);
+        d.metadata.put("Period", period);
+        d.metadata.put("Lead", String.valueOf(e.lead));
+        d.metadata.put("Testers", String.join(", ", e.testers));
+        d.metadata.put("Methodology", com.securetest.autoconfigure.pentest.ChecklistTemplates.METHODOLOGIES.get(e.methodology));
+        if (e.rulesOfEngagement != null) d.metadata.put("Rules of engagement", e.rulesOfEngagement);
+        d.addTable("Findings and Retest", List.of("Finding", "Title", "Priority", "Status", "Retest"),
+                list.stream().map(f -> List.of(f.id, f.title, (f.priority == null ? f.sourceSeverity : f.priority).name(), f.status.name(),
+                        f.verification == null ? "not retested" : f.verification.state)).toList());
+        if (r.type.equals("pentest")) {
+            d.addTable("Methodology Checklist", List.of("Item", "Category", "Test", "Result", "Tester", "Notes"),
+                    e.checklist.stream().map(c -> List.of(c.id, c.category, c.title, c.state, String.valueOf(c.tester == null ? "" : c.tester),
+                            String.valueOf(c.note == null ? "" : c.note))).toList());
+            remediationTable(d, list);
+            recommendations(d, list);
+        }
+        d.limitations.add("A penetration test is a point-in-time assessment of the listed scope; it cannot prove the absence of vulnerabilities.");
         return d;
     }
 
