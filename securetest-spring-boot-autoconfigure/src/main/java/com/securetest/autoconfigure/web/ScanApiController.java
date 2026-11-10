@@ -50,7 +50,13 @@ public class ScanApiController {
         this.audit = audit;
     }
 
-    public record ScanRequest(String scannerId, Map<String, String> options, boolean confirmed, String profileName, boolean saveProfile) { }
+    // Boxed so a missing JSON field means false on every Jackson version (Jackson 3 rejects null for primitives).
+    public record ScanRequest(String scannerId, Map<String, String> options, Boolean confirmed, String profileName, Boolean saveProfile) {
+        public ScanRequest {
+            confirmed = Boolean.TRUE.equals(confirmed);
+            saveProfile = Boolean.TRUE.equals(saveProfile);
+        }
+    }
 
     @PostMapping("/scans")
     public ResponseEntity<Map<String, Object>> create(@RequestBody ScanRequest req,

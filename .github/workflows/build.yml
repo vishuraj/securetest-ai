@@ -2,9 +2,10 @@ name: Build and test
 
 on:
   push:
-    branches: [master]
+    branches: [develop]
   pull_request:
-    branches: [master]
+    branches: [master, develop]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,4 +44,36 @@ jobs:
         with:
           name: test-reports-java-${{ matrix.java }}
           path: '**/target/surefire-reports/**'
+          if-no-files-found: ignore
+
+  # A fresh app that only adds the starter (plus Spring Security), run against every Spring Boot 3.x and 4.x line.
+  compatibility:
+    name: Boot ${{ matrix.boot }} ${{ matrix.stack }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        boot: ['3.0.13', '3.1.12', '3.2.12', '3.3.13', '3.4.13', '3.5.16', '4.0.9', '4.1.2']
+        stack: [mvc, webflux]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Install the starter
+        run: mvn -B -ntp -q install -DskipTests -pl securetest-spring-boot-starter -am
+
+      - name: Run the app on Spring Boot ${{ matrix.boot }} (${{ matrix.stack }})
+        run: mvn -B -ntp -f compatibility/pom.xml verify -Dboot.version=${{ matrix.boot }} -P${{ matrix.stack }}
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: compat-${{ matrix.boot }}-${{ matrix.stack }}
+          path: compatibility/target/surefire-reports/**
           if-no-files-found: ignore

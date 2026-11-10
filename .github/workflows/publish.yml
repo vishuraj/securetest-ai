@@ -1,12 +1,21 @@
 name: Publish to Maven Central
 
-# Push a tag like v1.0.0 whose number matches <version> in the POMs.
+# Every merge into master builds, signs and uploads the current <version> to the Central Portal.
+# The deployment then waits in https://central.sonatype.com/publishing/deployments until you click Publish
+# (set the repository variable CENTRAL_AUTO_PUBLISH=true to skip that click).
+# Maven Central never accepts the same version twice: once a version is published, later merges skip the
+# upload until <version> is raised in the POMs.
 on:
   push:
-    tags: ['v*']
+    branches: [master]
+  workflow_dispatch:
 
 permissions:
-  contents: write   # to create the GitHub release
+  contents: write   # to tag the release and create the GitHub release
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -26,21 +35,46 @@ jobs:
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - name: Check tag matches project version
+      - name: Read version and check Maven Central
+        id: version
         run: |
           VERSION=$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout)
-          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match project version ${VERSION}"; exit 1
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          URL="https://repo1.maven.org/maven2/io/github/vishuraj/securetest-spring-boot-starter/${VERSION}/securetest-spring-boot-starter-${VERSION}.pom"
+          if [[ "${VERSION}" == *-SNAPSHOT ]]; then
+            echo "Version ${VERSION} is a snapshot; nothing to publish." >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif curl -sfI "${URL}" > /dev/null; then
+            echo "Version ${VERSION} is already on Maven Central. Raise <version> in the POMs to publish a new release." >> "$GITHUB_STEP_SUMMARY"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build, test, sign and upload to the Central Portal
+        if: steps.version.outputs.publish == 'true'
         run: mvn -B -ntp -Prelease deploy -Dcentral.autoPublish=${{ vars.CENTRAL_AUTO_PUBLISH || 'false' }}
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: Create GitHub release
+      - name: Tag the uploaded commit
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          git tag -f "v${{ steps.version.outputs.version }}"
+          git push -f origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create or update the GitHub release
+        if: steps.version.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: SecureTest ${{ steps.version.outputs.version }}
           generate_release_notes: true
+
+      - name: Next step
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          echo "Uploaded ${{ steps.version.outputs.version }}. Open https://central.sonatype.com/publishing/deployments and click Publish." >> "$GITHUB_STEP_SUMMARY"
+          echo "If an older upload of the same version is still waiting there, click Drop on it first." >> "$GITHUB_STEP_SUMMARY"

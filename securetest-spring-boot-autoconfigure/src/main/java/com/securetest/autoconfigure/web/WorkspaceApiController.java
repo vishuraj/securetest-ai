@@ -42,6 +42,8 @@ import java.util.Map;
 @RequestMapping("${securetest.dashboard.path:/securetest}/api/v1")
 public class WorkspaceApiController {
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper EVENTS_JSON = new com.fasterxml.jackson.databind.ObjectMapper();
+
     private final TestManagementService tests;
     private final ScannerRegistry registry;
     private final CompatibilityService compatibility;
@@ -155,7 +157,7 @@ public class WorkspaceApiController {
     /** Machine-to-machine ingestion of runtime security alerts (Falco HTTP output, Wazuh integrator, SIEM webhook). */
     @PostMapping("/integrations/events")
     public Map<String, Object> ingest(@RequestHeader(value = "X-SecureTest-Token", required = false) String token,
-                                      @RequestBody JsonNode body, RequestInfo info) {
+                                      @RequestBody String rawBody, RequestInfo info) {
         String expected = secrets.resolve(props.getSecurity().getIngestTokenRef());
         if (expected == null || expected.isBlank()) throw ApiException.notFound("Event ingestion is not configured");
         if (token == null || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8))) {
@@ -163,6 +165,14 @@ public class WorkspaceApiController {
             throw new ApiException(401, "unauthenticated", "Invalid ingestion token");
         }
         if (!modules.isEnabled(ModuleCatalog.ADVANCED_SECURITY)) throw ApiException.conflict("The Advanced Security module is disabled.");
+        // Parsed with SecureTest's own Jackson so the endpoint does not depend on the host's JSON setup (Jackson 2 or 3).
+        JsonNode body;
+        try {
+            body = EVENTS_JSON.readTree(rawBody == null ? "" : rawBody);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw ApiException.badRequest("Request body is not valid JSON");
+        }
+        if (body == null || body.isMissingNode()) throw ApiException.badRequest("Request body is empty");
         List<JsonNode> events = new ArrayList<>();
         if (body.isArray()) body.forEach(events::add); else events.add(body);
         if (events.size() > 500) throw ApiException.badRequest("At most 500 events per request");

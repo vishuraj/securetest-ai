@@ -34,25 +34,36 @@ The sample app, control plane and worker are applications; they are not publishe
    Set the repository variable `CENTRAL_AUTO_PUBLISH=true` once you trust the pipeline; until then each upload
    waits in the Central Portal (*Deployments*) for you to press **Publish**.
 
-## Every release
+## Branches and every release
 
-1. Set the version everywhere (root POM, every module's parent version, and the BOM):
-   ```bash
-   mvn versions:set -DnewVersion=1.0.1 -DgenerateBackupPoms=false
-   mvn -f securetest-bom/pom.xml versions:set -DnewVersion=1.0.1 -DgenerateBackupPoms=false
-   ```
-   Then update the versions inside `securetest-bom/pom.xml` `<dependencyManagement>` and in `CHANGELOG.md`.
-2. Commit and push to `main`; wait for the *Build and test* workflow to pass.
-3. Tag and push:
-   ```bash
-   git tag v1.0.1
-   git push origin v1.0.1
-   ```
-4. The *Publish to Maven Central* workflow builds, tests, signs and uploads. Open https://central.sonatype.com →
-   *Deployments*, check the contents and press **Publish** (unless auto-publish is on).
-   Artifacts usually appear on Maven Central within 30 minutes.
+* `develop`: all work happens here. Every push and every pull request runs *Build and test*: the full build on
+  Java 17 and 21, and a fresh app using the starter on every Spring Boot line from 3.0 to 4.1 (MVC and WebFlux).
+* `master`: release branch. Open a pull request from `develop` to `master` and merge it when the checks pass.
 
-A published version can never be changed or deleted: always release a new version.
+Every merge into `master` runs *Publish to Maven Central*: it builds, tests, signs and uploads the version in the
+POMs, then tags that commit `v<version>` and creates the GitHub release. Then open https://central.sonatype.com →
+*Deployments*, check the contents and press **Publish** (unless auto-publish is on). If an older upload of the
+same version is still waiting there, press **Drop** on it first. Artifacts usually appear on Maven Central within
+30 minutes.
+
+Once a version is published, Maven Central never accepts it again, and later merges skip the upload. To release
+the next version, raise it on `develop` before merging:
+
+```bash
+mvn versions:set -DnewVersion=1.0.1 -DgenerateBackupPoms=false
+mvn -f securetest-bom/pom.xml versions:set -DnewVersion=1.0.1 -DgenerateBackupPoms=false
+```
+
+Then update the versions inside `securetest-bom/pom.xml` `<dependencyManagement>`, `compatibility/pom.xml`
+(`securetest.version`) and `CHANGELOG.md`.
+
+## Compatibility check on your machine
+
+```bash
+./mvnw install -DskipTests
+compatibility/run-matrix.sh              # every Spring Boot line, MVC and WebFlux
+compatibility/run-matrix.sh 4.1.2        # one version
+```
 
 ## Local dry run (no upload)
 

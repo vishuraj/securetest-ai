@@ -29,7 +29,16 @@ That is all: start the app and open `/securetest`. Every optional module starts 
 targets, credentials and permissions in the dashboard or in `application.yml`. To align several SecureTest modules, import
 `io.github.vishuraj:securetest-bom` instead of repeating the version.
 
-Requirements: Java 17+ and Spring Boot 3.2–3.5, with **Spring MVC or Spring WebFlux**. It works with or without Spring Security, in every profile including production, and from any machine. Spring Boot 4 starts with a compatibility warning.
+Requirements: Java 17+ and **Spring Boot 3.0 – 4.1** (every 3.x and 4.x line), with **Spring MVC or Spring WebFlux**. It works with or without Spring Security, in every profile including production, and from any machine. One jar covers all of them; there is no separate artifact per Boot version.
+
+| | Tested on every build |
+|---|---|
+| Spring Boot | 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 4.0, 4.1 (latest patch of each) |
+| Web stack | Spring MVC and Spring WebFlux, each with Spring Security |
+| Java | 17 and 21 in CI; the whole matrix also passes on Java 25 |
+| Jackson | 2 (Boot 3) and 3 (Boot 4) |
+
+Spring Boot 2.x (`javax.*`, Java 8/11) is not supported. On Spring Boot 3.0/3.1 with WebFlux, SecureTest's API runs on Reactor's shared worker threads instead of its own pool, because Spring Framework 6.0 lacks the hook for that.
 
 **Signing in.** On the machine running the app you go straight in. From anywhere else, or under a `prod`/`production` profile, the browser asks you to sign in. Use user `admin` and the password SecureTest printed in the startup log the first time it ran. The password is also stored in `~/.securetest/<app-name>/initial-admin-password`. To use your own sign-in instead, configure users, OIDC or container authentication.
 
