@@ -32,7 +32,19 @@ public class NotificationService {
     private final SecureTestProperties props;
     private final SecretResolver secrets;
     private final ObjectMapper mapper;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    // created on first webhook: building a JDK HttpClient starts a selector thread
+    private volatile HttpClient http;
+
+    private HttpClient http() {
+        HttpClient h = http;
+        if (h == null) {
+            synchronized (this) {
+                if (http == null) http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+                h = http;
+            }
+        }
+        return h;
+    }
     private final ExecutorService sender = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "securetest-notify");
         t.setDaemon(true);
@@ -90,7 +102,7 @@ public class NotificationService {
                 case "generic" -> { body.put("event", event); body.put("message", message); body.put("data", data); body.put("timestamp", Instant.now().toString()); }
                 default -> body.put("text", text);
             }
-            HttpResponse<Void> r = http.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
+            HttpResponse<Void> r = http().send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build(), HttpResponse.BodyHandlers.discarding());
             if (r.statusCode() >= 300) log.warn("SecureTest webhook '{}' returned HTTP {}", w.getName(), r.statusCode());

@@ -91,9 +91,20 @@ public class FleetService {
     private final List<FleetDiscovery> discovery;
     private final Predicate<String> classPresent;
     private final ObjectMapper json = new ObjectMapper();
-    private final HttpClient http;
+    private volatile HttpClient http; // created on first use: a JDK HttpClient starts a selector thread
+
+    private HttpClient http() {
+        HttpClient h = http;
+        if (h == null) {
+            synchronized (this) {
+                if (http == null) http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(fleet().getTimeout()).build();
+                h = http;
+            }
+        }
+        return h;
+    }
     private final ExecutorService pool;
-    private final Set<String> localHosts;
+    private volatile Set<String> localHosts; // computed on first use: reverse DNS and interface listing can be slow
 
     private volatile List<Target> targets = List.of();
     private volatile long targetsAt;
@@ -113,14 +124,12 @@ public class FleetService {
         this.env = env;
         this.discovery = discovery == null ? List.of() : List.copyOf(discovery);
         this.classPresent = classPresent;
-        this.http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(fleet().getTimeout()).build();
         AtomicInteger seq = new AtomicInteger();
         this.pool = Executors.newFixedThreadPool(8, r -> {
             Thread t = new Thread(r, "securetest-fleet-" + seq.incrementAndGet());
             t.setDaemon(true);
             return t;
         });
-        this.localHosts = localHosts();
     }
 
     private SecureTestProperties.Fleet fleet() {
@@ -303,7 +312,7 @@ public class FleetService {
             HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(t.baseUrl() + "/api/v1/fleet/summary"))
                     .timeout(fleet().getTimeout()).header("Accept", "application/json").GET();
             trustHeaders(b, t, "securetest-fleet", "VIEWER");
-            HttpResponse<String> r = http.send(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> r = http().send(b.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             int code = r.statusCode();
             if (code == 200) {
                 Map<String, Object> summary = json.readValue(r.body(), new TypeReference<Map<String, Object>>() { });
@@ -357,7 +366,7 @@ public class FleetService {
         });
         trustHeaders(b, t, user.name(), user.roles().stream().map(Enum::name).sorted().collect(Collectors.joining(",")));
         try {
-            HttpResponse<byte[]> r = http.send(b.build(), HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> r = http().send(b.build(), HttpResponse.BodyHandlers.ofByteArray());
             Map<String, String> headers = new LinkedHashMap<>();
             r.headers().map().forEach((k, v) -> {
                 String lk = k.toLowerCase(Locale.ROOT);
@@ -480,7 +489,9 @@ public class FleetService {
         Integer port = app.port();
         if (port == null || i.baseUri().getPort() != port) return false;
         String host = i.baseUri().getHost();
-        return host != null && localHosts.contains(host.toLowerCase(Locale.ROOT));
+        Set<String> hosts = localHosts;
+        if (hosts == null) localHosts = hosts = localHosts();
+        return host != null && hosts.contains(host.toLowerCase(Locale.ROOT));
     }
 
     private String selfInstanceId() {
