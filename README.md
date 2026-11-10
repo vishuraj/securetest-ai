@@ -79,6 +79,69 @@ saved profiles, a hash-chained audit log, webhooks (Slack/Teams/generic) and e-m
 
 You can add your own scanner by declaring a `@Bean` that implements `com.securetest.core.spi.Scanner`. Your own fix provider is a `@Bean` that implements `FixProvider`.
 
+## Monoliths and microservices
+
+SecureTest works out which kind of system it is in, and the dashboard adapts:
+
+| Your system | What you add | What you get |
+|---|---|---|
+| **Monolith** (one Spring Boot app, any number of Maven/Gradle modules) | The dependency in the app's POM, or in the parent POM | One dashboard at `/securetest` with every module |
+| **Microservices** (one repo with a parent POM) | The dependency **once**, in the parent POM's `<dependencies>` | Every service gets its own dashboard **plus** an **All services** page |
+
+**Microservices: one dependency for every service.** In the parent POM:
+
+```xml
+<dependencies>
+  <dependency>
+    <groupId>io.github.vishuraj</groupId>
+    <artifactId>securetest-spring-boot-starter</artifactId>
+    <version>1.0.1</version>
+  </dependency>
+</dependencies>
+```
+
+Each module then behaves correctly on its own:
+
+* **Business services** get every module: testing, code quality, vulnerabilities, API security, performance, compliance, health.
+* **Spring Cloud infrastructure** (Config Server, Eureka server, Spring Cloud Gateway, Spring Boot Admin) is detected and runs
+  as *infra*: health, metrics, performance and security checks, without the source-code modules (testing, code quality,
+  migration). Override with `securetest.role: service` or `infra`.
+* **Shared libraries** (modules that are not web applications) are untouched: nothing starts.
+
+**All services.** The page appears automatically when SecureTest finds a microservice system. The signals are a service
+registry client (Eureka, Consul, Zookeeper, Nacos, Kubernetes), a Spring Cloud Config client, a Spring Cloud infrastructure
+app, other services found by discovery, or services you list yourself. In a monolith it never appears. Open it from any
+service's dashboard. It shows every service and instance with health, requests per second, p95 latency, error rate,
+release gate, open critical/high findings and the state of each module. **Open** shows that service's own dashboard
+through the one you are on, with the same sign-in, so a single URL covers the whole system.
+
+* **Finding the services:** Spring Cloud service discovery is used when the app has it (Eureka, Consul, Kubernetes...).
+  Without it, list them:
+  ```yaml
+  securetest:
+    fleet:
+      members:
+        - { name: orders, url: http://orders:8081 }
+        - { name: users,  url: http://users:8082 }
+  ```
+* **Trust between services:** give every service the same secret in `SECURETEST_FLEET_TOKEN` (an environment variable,
+  `.env`, or your config server). Services on one machine work without it. The token lets one service act for its signed-in
+  user on the others, so treat it like an admin password.
+* **Shared settings in one place:** with a Spring Cloud Config Server, put SecureTest settings in its shared
+  `application.yml` and every service picks them up. For example:
+  ```yaml
+  securetest:
+    modules:
+      metrics: { enabled: true }        # request rate and latency on the All services page
+    dashboard:
+      authentication:
+        provider: basic                 # or oidc
+        users:
+          - { username: admin, password: "{env}SECURETEST_ADMIN_PW", roles: [ADMIN] }
+  ```
+* **Drill-down paths:** a service's dashboard is reached at `/securetest/fleet/<service>/`. A service whose dashboard
+  lives at a different path can publish it in its registry metadata as `securetest-path`.
+
 ## Security model (secure by default)
 
 * **Dashboard**: on in every environment; set `securetest.dashboard.enabled=false` to switch it off. It is never open without sign-in beyond the local machine, and in production sign-in is always required.
@@ -130,6 +193,14 @@ securetest:
         roles-claim: realm_access.roles                   # dot path into the ID token
         default-role: VIEWER                              # unset = deny unmapped users
         session-timeout: 8h
+  role: auto                        # auto | service | infra (infra = no testing/code-quality/migration)
+  fleet:
+    enabled: auto                   # auto: All services page only in a microservice system | true | false
+    token-ref: env://SECURETEST_FLEET_TOKEN   # same secret on every service
+    discovery: true                 # use Spring Cloud service discovery when present
+    members: []                     # [{name, url}] when there is no service discovery
+    timeout: 3s
+    cache-ttl: 10s
   control-plane:
     enabled: false
     url: https://securetest.example.com

@@ -10,6 +10,14 @@ All notable changes are documented here. The project follows [Semantic Versionin
 * Tested on every build against a fresh app on each Spring Boot line from 3.0 to 4.1, with Spring MVC and WebFlux, both
   with Spring Security (`compatibility/`).
 * Releases: every merge into `master` uploads the current version to the Central Portal.
+* Microservices: add the dependency once in the parent POM. Spring Cloud infrastructure apps (Config Server, Eureka,
+  Gateway, Spring Boot Admin) are detected and skip the source-code modules (`securetest.role`).
+* **All services** page: shown automatically in a microservice system and never in a monolith. Services are found
+  through Spring Cloud service discovery or `securetest.fleet.members`, and each row shows health, performance, release
+  gate, findings and module states. **Open** drills into that service's own dashboard through the same URL and sign-in.
+  Services trust each other through `SECURETEST_FLEET_TOKEN`.
+* Fix: health showed UNKNOWN when the Actuator jar was present without its health endpoint.
+* Fix: a stray "null" next to the signed-in user's name.
 
 ## [1.0.0] - 2026-11-10
 

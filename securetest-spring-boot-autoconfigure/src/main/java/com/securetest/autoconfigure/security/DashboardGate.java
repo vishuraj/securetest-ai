@@ -1,6 +1,7 @@
 package com.securetest.autoconfigure.security;
 
 import com.securetest.autoconfigure.SecureTestProperties;
+import com.securetest.autoconfigure.fleet.FleetService;
 import com.securetest.autoconfigure.security.Rbac.Role;
 import com.securetest.autoconfigure.service.AuditService;
 import com.securetest.autoconfigure.support.SecretResolver;
@@ -79,9 +80,10 @@ public class DashboardGate {
         if (correlationId == null) correlationId = UUID.randomUUID().toString();
         res.header("X-Correlation-Id", correlationId);
         String uri = req.path();
-        boolean api = uri.startsWith(basePath + "/api/");
+        // the dashboard API, also when it is another service's API reached through the "All services" drill-down
+        boolean api = uri.startsWith(basePath + "/api/") || (uri.startsWith(basePath + "/fleet/") && uri.indexOf("/api/", basePath.length() + 7) > 0);
         headers(res, api);
-        RequestInfo info = new RequestInfo(req.remoteAddress(), correlationId, uri);
+        RequestInfo info = new RequestInfo(req.remoteAddress(), correlationId, uri, req.query());
         boolean local = isLocal(req);
         if (loopbackOnly() && !local) {
             res.json(403, "The SecureTest dashboard only accepts local connections (securetest.dashboard.bind-address=127.0.0.1).");
@@ -107,6 +109,17 @@ public class DashboardGate {
                 }
                 return new Decision(false, null, info, res);
             }
+        }
+        String fleetToken = req.header(FleetService.TOKEN_HEADER);
+        if (fleetToken != null) { // another SecureTest service (the "All services" view), acting for its signed-in user
+            SecureTestPrincipal fleet = fleetPrincipal(req, fleetToken);
+            if (fleet == null) {
+                if (audit != null) audit.record("fleet", req.remoteAddress(), "auth.fleet", "dashboard", "DENIED", Map.of());
+                res.json(401, "Invalid fleet token");
+                return new Decision(false, null, info, res);
+            }
+            // no CSRF check: browsers cannot send this header cross-site, and the caller proved it holds the shared secret
+            return new Decision(true, fleet.withCorrelationId(correlationId), info, res);
         }
         SecureTestPrincipal principal = authenticate(req, local, provider);
         if (principal == null) {
@@ -164,6 +177,30 @@ public class DashboardGate {
                 yield basic(req);
             }
         };
+    }
+
+    /** Trusts a call from another service of the same system when it presents the shared fleet token. */
+    private SecureTestPrincipal fleetPrincipal(GateRequest req, String presented) {
+        String expected = secrets.resolve(props.getFleet().getTokenRef());
+        if (expected == null || expected.isBlank()) return null;
+        if (!MessageDigest.isEqual(expected.trim().getBytes(StandardCharsets.UTF_8), presented.trim().getBytes(StandardCharsets.UTF_8))) return null;
+        String user = req.header(FleetService.USER_HEADER);
+        user = user == null || !user.matches("[A-Za-z0-9_.@+-]{1,128}") ? "fleet" : user;
+        EnumSet<Role> roles = EnumSet.noneOf(Role.class);
+        String rh = req.header(FleetService.ROLES_HEADER);
+        if (rh != null) {
+            for (String r : rh.split(",")) {
+                try {
+                    roles.add(Role.valueOf(r.trim().toUpperCase(Locale.ROOT)));
+                } catch (IllegalArgumentException ignored) {
+                    // unknown role names are dropped
+                }
+            }
+        }
+        if (roles.isEmpty()) roles.add(Role.VIEWER);
+        String via = req.header(FleetService.VIA_HEADER);
+        via = via == null || !via.matches("[A-Za-z0-9_.-]{1,64}") ? "fleet" : "fleet:" + via;
+        return new SecureTestPrincipal(user, roles, via, req.remoteAddress());
     }
 
     private SecureTestPrincipal basic(GateRequest req) {

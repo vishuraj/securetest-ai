@@ -52,6 +52,7 @@ public class ReactiveGateRequest implements GateRequest {
     }
 
     @Override public String method() { return req.getMethod().name(); }
+    @Override public String query() { return req.getURI().getRawQuery(); }
 
     @Override
     public String remoteAddress() {

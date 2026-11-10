@@ -33,6 +33,60 @@ public class SecureTestProperties {
     private Policy policy = new Policy();
     private Application application = new Application();
     private Ai ai = new Ai();
+    /**
+     * What this application is in a microservice system. auto (default): Spring Cloud Config Server, Eureka Server,
+     * Spring Cloud Gateway and Spring Boot Admin apps are "infra" (health, metrics and performance; no source-code modules);
+     * everything else is a "service". Set service or infra to override.
+     */
+    private String role = "auto";
+    private Fleet fleet = new Fleet();
+
+    /** The "All services" view for microservice systems. */
+    public static class Fleet {
+        /**
+         * auto (default): shown when this app is part of a microservice system (service discovery finds other services,
+         * members are configured, or it is a Spring Cloud infrastructure app); hidden for a monolith. true / false force it.
+         */
+        private String enabled = "auto";
+        /** Shared secret every service uses to trust the others' SecureTest calls, e.g. env://SECURETEST_FLEET_TOKEN. */
+        private String tokenRef = "env://SECURETEST_FLEET_TOKEN";
+        /** Use Spring Cloud service discovery (Eureka, Consul, Kubernetes...) when it is on the classpath. */
+        private boolean discovery = true;
+        /** Services listed by hand (when there is no service discovery), e.g. {name: user-service, url: http://user-service:8081}. */
+        private List<Member> members = new ArrayList<>();
+        /** Per-call timeout when asking another service for its summary. */
+        private Duration timeout = Duration.ofSeconds(3);
+        /** How long the combined view is cached. */
+        private Duration cacheTtl = Duration.ofSeconds(10);
+        /** Upper bound on instances queried for one view. */
+        private int maxInstances = 100;
+
+        public String getEnabled() { return enabled; }
+        public void setEnabled(String enabled) { this.enabled = enabled; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+        public boolean isDiscovery() { return discovery; }
+        public void setDiscovery(boolean discovery) { this.discovery = discovery; }
+        public List<Member> getMembers() { return members; }
+        public void setMembers(List<Member> members) { this.members = members; }
+        public Duration getTimeout() { return timeout; }
+        public void setTimeout(Duration timeout) { this.timeout = timeout; }
+        public Duration getCacheTtl() { return cacheTtl; }
+        public void setCacheTtl(Duration cacheTtl) { this.cacheTtl = cacheTtl; }
+        public int getMaxInstances() { return maxInstances; }
+        public void setMaxInstances(int maxInstances) { this.maxInstances = maxInstances; }
+    }
+
+    public static class Member {
+        private String name;
+        /** Base URL of the service (scheme, host, port and any servlet context path). */
+        private String url;
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+    }
 
     /** AI-assisted remediation (SRS 9.2). Off by default; needs BOTH enabled and data-processing-approved. */
     public static class Ai {
@@ -474,6 +528,10 @@ public class SecureTestProperties {
 
     public Ai getAi() { return ai; }
     public void setAi(Ai ai) { this.ai = ai; }
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
+    public Fleet getFleet() { return fleet; }
+    public void setFleet(Fleet fleet) { this.fleet = fleet; }
 
     public Module module(String id) {
         return modules.getOrDefault(id, new Module());

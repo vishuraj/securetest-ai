@@ -52,6 +52,14 @@ class DashboardCompatibilityTest {
     }
 
     @Test
+    void aSingleAppIsAMonolithAndStillServesItsFleetSummary() throws Exception {
+        assertThat(http.get("/securetest/api/v1/me").body()).contains("\"mode\":\"monolith\"");
+        HttpResponse<String> summary = http.get("/securetest/api/v1/fleet/summary");
+        assertThat(summary.statusCode()).isEqualTo(200);
+        assertThat(summary.body()).contains("\"health\":\"UP\"").contains("\"modules\"").contains("\"gate\"");
+    }
+
+    @Test
     void applicationSecurityIsUnchanged() throws Exception {
         HttpResponse<String> hello = http.get("/hello", "Accept", "application/json");
         assertThat(hello.statusCode()).isEqualTo(401);

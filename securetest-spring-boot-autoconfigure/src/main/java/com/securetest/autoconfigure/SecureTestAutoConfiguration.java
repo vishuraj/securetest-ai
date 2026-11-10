@@ -91,9 +91,9 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
-        SecureTestAutoConfiguration.MailBridgeConfig.class})
+        SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
 
     // ------------------------------------------------------------------ infrastructure
@@ -131,7 +131,31 @@ public class SecureTestAutoConfiguration {
     AuditService secureTestAudit(LocalStore store) { return new AuditService(store); }
 
     @Bean
-    ModuleService secureTestModules(SecureTestProperties props, LocalStore store) { return new ModuleService(props, store); }
+    com.securetest.autoconfigure.support.AppRole secureTestAppRole(SecureTestProperties props) {
+        return com.securetest.autoconfigure.support.AppRole.resolve(props.getRole(),
+                name -> org.springframework.util.ClassUtils.isPresent(name, SecureTestAutoConfiguration.class.getClassLoader()));
+    }
+
+    @Bean
+    ModuleService secureTestModules(SecureTestProperties props, LocalStore store, com.securetest.autoconfigure.support.AppRole role) {
+        return new ModuleService(props, store, role);
+    }
+
+    @Bean(destroyMethod = "shutdown")
+    com.securetest.autoconfigure.fleet.FleetService secureTestFleet(SecureTestProperties props, AppContext app,
+            com.securetest.autoconfigure.support.AppRole role, com.securetest.autoconfigure.service.StatusService status,
+            TelemetryService telemetry, FindingService findings, SecretResolver secrets, Environment env,
+            ObjectProvider<com.securetest.autoconfigure.fleet.FleetDiscovery> discovery) {
+        return new com.securetest.autoconfigure.fleet.FleetService(props, app, role, status, telemetry, findings, secrets, env,
+                discovery.orderedStream().toList(),
+                name -> org.springframework.util.ClassUtils.isPresent(name, SecureTestAutoConfiguration.class.getClassLoader()));
+    }
+
+    @Bean
+    com.securetest.autoconfigure.service.StatusService secureTestStatus(SecureTestProperties props, AppContext app, ModuleService modules,
+                                                                      ScannerRegistry registry, JobService jobs, FindingService findings) {
+        return new com.securetest.autoconfigure.service.StatusService(props, app, modules, registry, jobs, findings);
+    }
 
     @Bean
     FindingService secureTestFindings(SecureTestProperties props, AppContext app, LocalStore store) { return new FindingService(props, app, store); }
@@ -308,7 +332,7 @@ public class SecureTestAutoConfiguration {
         HealthSource secureTestActuatorHealth(ObjectProvider<org.springframework.boot.actuate.health.HealthEndpoint> endpoint) {
             return () -> {
                 var ep = endpoint.getIfAvailable();
-                if (ep == null) return Map.of("status", "UNKNOWN", "detail", "Actuator health endpoint not enabled");
+                if (ep == null) return Map.of("status", "UP", "detail", "Application responding; Actuator health endpoint not enabled");
                 var h = ep.health();
                 Map<String, Object> m = new java.util.LinkedHashMap<>();
                 m.put("status", h.getStatus().getCode());
@@ -379,6 +403,35 @@ public class SecureTestAutoConfiguration {
                         if ("SERVER_ERROR".equals(t.getId().getTag("outcome"))) errors += t.count();
                     }
                     return Map.of("count", count, "errors", errors, "meanMs", count == 0 ? 0 : Math.round(totalMs / count * 10) / 10.0, "maxMs", maxMs);
+                }
+            };
+        }
+    }
+
+    /** Spring Cloud service discovery (Eureka, Consul, Kubernetes...) for the "All services" view; only when the app has Spring Cloud. */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "org.springframework.cloud.client.discovery.DiscoveryClient")
+    static class SpringCloudDiscovery {
+
+        @Bean
+        com.securetest.autoconfigure.fleet.FleetDiscovery secureTestSpringCloudDiscovery(
+                ObjectProvider<org.springframework.cloud.client.discovery.DiscoveryClient> client) {
+            return new com.securetest.autoconfigure.fleet.FleetDiscovery() {
+                private com.securetest.autoconfigure.fleet.SpringCloudFleetDiscovery delegate() {
+                    org.springframework.cloud.client.discovery.DiscoveryClient c = client.getIfAvailable();
+                    return c == null ? null : new com.securetest.autoconfigure.fleet.SpringCloudFleetDiscovery(c);
+                }
+
+                @Override
+                public String description() {
+                    var d = delegate();
+                    return d == null ? "Spring Cloud service discovery (no client)" : d.description();
+                }
+
+                @Override
+                public java.util.List<Instance> instances() {
+                    var d = delegate();
+                    return d == null ? java.util.List.of() : d.instances();
                 }
             };
         }

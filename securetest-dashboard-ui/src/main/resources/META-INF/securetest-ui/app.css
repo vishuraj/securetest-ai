@@ -109,7 +109,9 @@ main:focus { outline: none; }
 .st-RUNNING, .st-QUEUED, .st-GENERATING, .st-PARTIAL, .st-APPLIED, .st-PREVIEW, .st-IN_PROGRESS { background: var(--low-bg); color: var(--low); }
 .st-FAILED, .st-FAIL, .st-ERROR, .st-DOWN, .st-CONFLICT, .st-VALIDATION_FAILED, .st-REJECTED, .st-OPEN { background: var(--crit-bg); color: var(--crit); }
 .st-NEEDS_ATTENTION, .st-WARN, .st-AWAITING_APPROVAL, .st-NOT_CONFIGURED { background: var(--med-bg); color: var(--med); }
-.st-DISABLED, .st-NOT_ASSESSED, .st-NOT_APPLICABLE, .st-CANCELLED, .st-UNDONE, .st-INFO, .st-SUPPRESSED, .st-FIXED, .st-ACCEPTED_RISK, .st-FALSE_POSITIVE, .st-UNSUPPORTED { background: var(--info-bg); color: var(--info); }
+.st-DEGRADED, .st-UNAUTHORIZED, .st-NOT_INSTALLED { background: var(--med-bg); color: var(--med); }
+.st-UNREACHABLE { background: var(--crit-bg); color: var(--crit); }
+.st-UNKNOWN, .st-DISABLED, .st-NOT_ASSESSED, .st-NOT_APPLICABLE, .st-CANCELLED, .st-UNDONE, .st-INFO, .st-SUPPRESSED, .st-FIXED, .st-ACCEPTED_RISK, .st-FALSE_POSITIVE, .st-UNSUPPORTED { background: var(--info-bg); color: var(--info); }
 .mode-PASSIVE { background: var(--ok-bg); color: var(--ok); }
 .mode-ACTIVE { background: var(--crit-bg); color: var(--crit); }
 .mode-RESOURCE_INTENSIVE { background: var(--med-bg); color: var(--med); }
