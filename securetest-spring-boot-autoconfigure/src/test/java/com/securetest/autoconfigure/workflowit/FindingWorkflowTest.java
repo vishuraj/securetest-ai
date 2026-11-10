@@ -131,7 +131,7 @@ class FindingWorkflowTest {
         String id = ctx.getBean(FindingService.class).ingest(seed, List.of(gone), "workspace", false).get(0).id;
 
         String started = call("POST", "/findings/" + id + "/retest", "{\"confirmed\":true}").body();
-        assertThat(started).contains("\"mode\":\"scan\"").contains("PENDING");
+        assertThat(started).contains("\"mode\":\"scan\""); // may already be settled on a fast machine
         String state = "PENDING";
         for (int i = 0; i < 120 && "PENDING".equals(state); i++) {
             Thread.sleep(250);

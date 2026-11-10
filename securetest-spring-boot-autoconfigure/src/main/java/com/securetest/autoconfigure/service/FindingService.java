@@ -126,7 +126,8 @@ public class FindingService {
         }
         for (Finding f : byId.values()) { // retests waiting for this scan
             Finding.Verification v = f.verification;
-            if (v == null || !"PENDING".equals(v.state) || !job.id.equals(v.jobId)) continue;
+            if (!retestFor(v, job)) continue;
+            v.jobId = job.id;
             v.completedAt = now;
             v.verifiedBy = job.scannerName;
             if (seen.contains(f.fingerprint)) {
@@ -170,18 +171,46 @@ public class FindingService {
 
     // ------------------------------------------------------------------ retest
 
-    /** Marks a retest as running (automated, with the scan's job id) or waiting for a tester (manual findings). */
-    public synchronized Finding requestRetest(String id, String jobId, String actor) {
+    /**
+     * Marks a retest as pending before its scan is submitted (automated: the next complete run of {@code scannerId} settles
+     * it, so a scan that finishes before the job id is attached is not missed) or as waiting for a tester (scannerId null).
+     */
+    public synchronized Finding requestRetest(String id, String scannerId, String actor) {
         Finding f = get(id);
         Finding.Verification v = new Finding.Verification();
-        v.state = jobId == null ? "AWAITING_TESTER" : "PENDING";
-        v.jobId = jobId;
+        v.state = scannerId == null ? "AWAITING_TESTER" : "PENDING";
+        v.scannerId = scannerId;
         v.requestedBy = actor;
         v.requestedAt = Instant.now();
         f.verification = v;
-        f.addHistory(actor, "RETEST_REQUESTED", jobId == null ? "Waiting for a tester to verify the fix" : "Retest scan " + jobId);
+        f.addHistory(actor, "RETEST_REQUESTED", scannerId == null ? "Waiting for a tester to verify the fix" : "Retest with " + scannerId);
         touch();
         return f;
+    }
+
+    /** Records which scan runs the retest (for display), unless that scan already settled it. */
+    public synchronized Finding attachRetestJob(String id, String jobId) {
+        Finding f = get(id);
+        if (f.verification != null && f.verification.jobId == null) f.verification.jobId = jobId;
+        touch();
+        return f;
+    }
+
+    /** The retest could not be started (e.g. the module is off): nothing will settle it. */
+    public synchronized void retestNotStarted(String id, String reason) {
+        Finding f = get(id);
+        if (f.verification != null && "PENDING".equals(f.verification.state)) {
+            f.verification.state = "INCONCLUSIVE";
+            f.verification.completedAt = Instant.now();
+            f.verification.note = reason;
+            touch();
+        }
+    }
+
+    private static boolean retestFor(Finding.Verification v, ScanJob job) {
+        if (v == null || !"PENDING".equals(v.state)) return false;
+        return job.id.equals(v.jobId) || (v.jobId == null && job.scannerId.equals(v.scannerId))
+                || (job.scannerId.equals(v.scannerId) && v.requestedAt != null && job.createdAt != null && !job.createdAt.isBefore(v.requestedAt));
     }
 
     /** A tester's verdict on a retest (manual findings, or overriding an automated result). */
@@ -208,7 +237,7 @@ public class FindingService {
         boolean changed = false;
         for (Finding f : byId.values()) {
             Finding.Verification v = f.verification;
-            if (v != null && "PENDING".equals(v.state) && job.id.equals(v.jobId)) {
+            if (retestFor(v, job) && (job.id.equals(v.jobId) || v.jobId == null)) {
                 v.state = "INCONCLUSIVE";
                 v.completedAt = Instant.now();
                 v.note = "Retest scan " + job.id + " ended with " + job.status;

@@ -110,9 +110,16 @@ public class FindingWorkflowController {
             }
             options.put("_retestOf", f.id);
             boolean confirmed = body != null && Boolean.TRUE.equals(body.confirmed());
-            ScanJob job = jobs.submit(new JobService.SubmitRequest(f.source, options, confirmed, null, null), p);
+            findings.requestRetest(f.id, f.source, p.name()); // before submitting: a fast scan must find it pending
+            ScanJob job;
+            try {
+                job = jobs.submit(new JobService.SubmitRequest(f.source, options, confirmed, null, null), p);
+            } catch (RuntimeException e) {
+                findings.retestNotStarted(f.id, "Retest scan could not start: " + e.getMessage());
+                throw e;
+            }
             out.put("job", job);
-            f = findings.requestRetest(f.id, job.id, p.name());
+            f = findings.attachRetestJob(f.id, job.id);
         } else {
             f = findings.requestRetest(f.id, null, p.name());
         }

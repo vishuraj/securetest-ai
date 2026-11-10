@@ -142,6 +142,8 @@ public class Finding {
         public String requestedBy;
         public Instant requestedAt;
         public String jobId;
+        /** Scanner whose next complete run settles an automated retest. */
+        public String scannerId;
         public String verifiedBy;
         public Instant completedAt;
         public String note;
