@@ -8,9 +8,10 @@ const NAV = [
   { hash: '#/findings', label: 'Findings', count: true },
   { hash: '#/scans', label: 'Scans' },
   { sep: 'Modules' },
-  ...['health', 'metrics', 'testing', 'code-quality', 'vulnerability', 'api-security', 'performance', 'compliance', 'network-security', 'advanced-security', 'cloud-security', 'migration']
+  ...['health', 'metrics', 'testing', 'code-quality', 'vulnerability', 'api-security', 'performance', 'compliance', 'network-security', 'advanced-security', 'cloud-security', 'migration', 'pentest', 'attack-surface', 'ai-security']
     .map(id => ({ module: id, hash: '#/module/' + id })),
   { sep: 'Governance' },
+  { hash: '#/engagements', label: 'Pentest engagements' },
   { hash: '#/compliance', label: 'Compliance' },
   { hash: '#/migration', label: 'Migration workflow' },
   { hash: '#/reports', label: 'Reports' },

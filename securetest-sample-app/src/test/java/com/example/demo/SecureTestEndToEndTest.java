@@ -79,7 +79,7 @@ class SecureTestEndToEndTest {
     @Test
     void modulesAreOffUnlessConfigured() {
         List<Map<String, Object>> modules = http.exchange(API + "/modules", HttpMethod.GET, null, LIST).getBody();
-        assertThat(modules).hasSize(12);
+        assertThat(modules).hasSize(15);
         modules.forEach(m -> {
             if (!List.of("code-quality", "compliance", "api-security").contains(m.get("id"))) assertThat(m.get("enabled")).as((String) m.get("id")).isEqualTo(false);
         });

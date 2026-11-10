@@ -91,7 +91,7 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.EngagementController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
         SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
@@ -154,6 +154,13 @@ public class SecureTestAutoConfiguration {
     @Bean
     com.securetest.autoconfigure.service.IssueTrackerService secureTestIssueTrackers(SecureTestProperties props, SecretResolver secrets, AppContext app) {
         return new com.securetest.autoconfigure.service.IssueTrackerService(props, secrets, app);
+    }
+
+    @Bean
+    com.securetest.autoconfigure.pentest.EngagementService secureTestEngagements(LocalStore store, FindingService findings, ReportService reports) {
+        com.securetest.autoconfigure.pentest.EngagementService e = new com.securetest.autoconfigure.pentest.EngagementService(store, findings);
+        reports.bind(e);
+        return e;
     }
 
     @Bean

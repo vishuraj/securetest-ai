@@ -53,6 +53,8 @@ public class ReportService {
         TYPES.put("compliance", "Compliance evidence report");
         TYPES.put("migration", "Migration assessment and execution report");
         TYPES.put("remediation", "Remediation progress and SLA report");
+        TYPES.put("pentest", "Penetration test engagement report");
+        TYPES.put("attestation", "Penetration test completion letter");
     }
 
     public static class Report {
@@ -72,7 +74,8 @@ public class ReportService {
     }
 
     // Boxed so a missing JSON field means false on every Jackson version (Jackson 3 rejects null for primitives).
-    public record Request(String type, String title, List<String> modules, String minPriority, Boolean includeClosed, String migrationId) {
+    public record Request(String type, String title, List<String> modules, String minPriority, Boolean includeClosed, String migrationId,
+                          String engagementId) {
         public Request {
             includeClosed = Boolean.TRUE.equals(includeClosed);
         }
@@ -129,6 +132,11 @@ public class ReportService {
         if (req.minPriority() != null) r.filters.put("minPriority", req.minPriority());
         r.filters.put("includeClosed", String.valueOf(req.includeClosed()));
         if (req.migrationId() != null) r.filters.put("migrationId", req.migrationId());
+        if (req.engagementId() != null) r.filters.put("engagementId", req.engagementId());
+        if ((r.type.equals("pentest") || r.type.equals("attestation")) && (engagements == null || req.engagementId() == null)) {
+            throw ApiException.badRequest("engagementId is required for " + r.type + " reports");
+        }
+        if (engagements != null && req.engagementId() != null) engagements.get(req.engagementId());
         reports.put(r.id, r);
         store.markDirty("reports");
         audit.record(p, "report.requested", r.id, "GENERATING", Map.of("type", r.type));
@@ -181,6 +189,7 @@ public class ReportService {
         d.snapshotVersion = "findings-rev-" + findings.revision() + " @ " + Instant.now();
         d.generatedAt = Instant.now();
 
+        if (r.type.equals("pentest") || r.type.equals("attestation")) return engagementReport(r, req, d);
         Set<String> scope = scopeModules(r.type, req.modules());
         Severity min = req.minPriority() == null ? Severity.INFO : Severity.valueOf(req.minPriority());
         List<Finding> list = findings.all().stream()
@@ -243,6 +252,55 @@ public class ReportService {
         recommendations(d, list);
         d.limitations.add("Embedded runtime analysis cannot see build-time artifacts; source checks cover the configured workspace only.");
         d.limitations.add("Findings reflect the state at the data snapshot " + d.snapshotVersion + ".");
+        return d;
+    }
+
+    // ------------------------------------------------------------------ pentest engagements
+
+    private com.securetest.autoconfigure.pentest.EngagementService engagements;
+
+    public void bind(com.securetest.autoconfigure.pentest.EngagementService engagements) {
+        this.engagements = engagements;
+    }
+
+    private ReportDocument engagementReport(Report r, Request req, ReportDocument d) {
+        var e = engagements.get(req.engagementId());
+        Map<String, Object> progress = engagements.progress(e.id);
+        List<Finding> list = new ArrayList<>(engagements.findingsOf(e.id));
+        d.findings = r.type.equals("attestation") ? new ArrayList<>() : new ArrayList<>(list);
+        for (Severity s : Severity.values()) d.severityCounts.put(s, 0);
+        list.forEach(f -> d.severityCounts.merge(f.priority == null ? f.sourceSeverity : f.priority, 1, Integer::sum));
+        long fixed = list.stream().filter(f -> f.verification != null && "VERIFIED_FIXED".equals(f.verification.state)).count();
+        long open = list.stream().filter(Finding::isOpen).count();
+        d.scope = "Engagement " + e.id + " \u2014 " + e.name + " (" + e.type + "). In scope: " + String.join(", ", e.scope)
+                + (e.outOfScope.isEmpty() ? "" : ". Out of scope: " + String.join(", ", e.outOfScope)) + ".";
+        String period = (e.startDate == null ? "?" : e.startDate.toString()) + " to " + (e.endDate == null ? "?" : e.endDate.toString());
+        d.executiveSummary = (r.type.equals("attestation")
+                ? "This letter confirms that a penetration test of the scope below was performed between " + period
+                + " following the " + com.securetest.autoconfigure.pentest.ChecklistTemplates.METHODOLOGIES.get(e.methodology) + " checklist. "
+                : "Penetration test performed between " + period + ". ")
+                + list.size() + " finding(s) were reported: " + d.severityCounts.get(Severity.CRITICAL) + " critical, " + d.severityCounts.get(Severity.HIGH)
+                + " high, " + d.severityCounts.get(Severity.MEDIUM) + " medium, " + d.severityCounts.get(Severity.LOW) + " low, "
+                + d.severityCounts.get(Severity.INFO) + " informational. " + fixed + " were verified fixed by retest and " + open + " remain open. "
+                + "Checklist coverage: " + progress.get("coveragePercent") + "%." + (e.summary == null ? "" : " " + e.summary);
+        d.metadata.put("Engagement", e.id + " \u2014 " + e.name);
+        d.metadata.put("Status", e.status);
+        d.metadata.put("Period", period);
+        d.metadata.put("Lead", String.valueOf(e.lead));
+        d.metadata.put("Testers", String.join(", ", e.testers));
+        d.metadata.put("Methodology", com.securetest.autoconfigure.pentest.ChecklistTemplates.METHODOLOGIES.get(e.methodology));
+        if (e.rulesOfEngagement != null) d.metadata.put("Rules of engagement", e.rulesOfEngagement);
+        d.addTable("Findings and Retest", List.of("Finding", "Title", "Priority", "Status", "Retest"),
+                list.stream().map(f -> List.of(f.id, f.title, (f.priority == null ? f.sourceSeverity : f.priority).name(), f.status.name(),
+                        f.verification == null ? "not retested" : f.verification.state)).toList());
+        if (r.type.equals("pentest")) {
+            d.addTable("Methodology Checklist", List.of("Item", "Category", "Test", "Result", "Tester", "Notes"),
+                    e.checklist.stream().map(c -> List.of(c.id, c.category, c.title, c.state, String.valueOf(c.tester == null ? "" : c.tester),
+                            String.valueOf(c.note == null ? "" : c.note))).toList());
+            remediationTable(d, list);
+            recommendations(d, list);
+        }
+        d.limitations.add("A penetration test is a point-in-time assessment of the listed scope; it cannot prove the absence of vulnerabilities.");
         return d;
     }
 

@@ -23,6 +23,9 @@ public final class ModuleCatalog {
     public static final String ADVANCED_SECURITY = "advanced-security";
     public static final String CLOUD_SECURITY = "cloud-security";
     public static final String MIGRATION = "migration";
+    public static final String PENTEST = "pentest";
+    public static final String ATTACK_SURFACE = "attack-surface";
+    public static final String AI_SECURITY = "ai-security";
 
     public static final List<ModuleInfo> MODULES = List.of(
             new ModuleInfo(HEALTH, "Health", "Application health and baseline JVM snapshot.", false,
@@ -48,7 +51,13 @@ public final class ModuleCatalog {
             new ModuleInfo(CLOUD_SECURITY, "Cloud / Kubernetes", "Dockerfile, Kubernetes, Compose and Terraform checks; Checkov, Trivy and Prowler adapters.", false,
                     "Cloud account checks use your installed tools and least-privilege read-only credentials."),
             new ModuleInfo(MIGRATION, "Migration", "Java, Spring Boot, javax→jakarta and build modernization with diff, apply and undo.", false,
-                    "Analysis never changes files. Applying changes needs policy opt-in, approval and a rollback point.")
+                    "Analysis never changes files. Applying changes needs policy opt-in, approval and a rollback point."),
+            new ModuleInfo(PENTEST, "Pentest / VAPT", "Penetration-test engagements: scope, testers, methodology checklist, findings, retest and completion report.", false,
+                    "Bookkeeping for manual testing. Nothing runs in the background; testers report findings and verify fixes."),
+            new ModuleInfo(ATTACK_SURFACE, "Attack Surface", "External asset inventory: domains, subdomains, exposed services, certificates and new-CVE alerts.", false,
+                    "Only checks domains and hosts you register. Certificate-transparency lookups are an explicit opt-in that calls crt.sh."),
+            new ModuleInfo(AI_SECURITY, "AI / LLM Security", "OWASP Top 10 for LLM applications: risky LLM usage in code and prompt-injection tests of your AI endpoints.", false,
+                    "Code checks are local. Endpoint tests are active: they need an allowlisted target, confirmation and approval.")
     );
 
     private ModuleCatalog() { }
