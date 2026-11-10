@@ -2,14 +2,8 @@
 
 All notable changes are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
-## [1.0.1] - unreleased
+## [1.0.2] - unreleased
 
-* Spring Boot 4.0 and 4.1 support. 1.0.0 failed to start on Boot 4 (a Boot class it used moved package) and rejected
-  some dashboard requests under Jackson 3.
-* WebFlux apps on Spring Boot 3.0 and 3.1 now start.
-* Tested on every build against a fresh app on each Spring Boot line from 3.0 to 4.1, with Spring MVC and WebFlux, both
-  with Spring Security (`compatibility/`).
-* Releases: every merge into `master` uploads the current version to the Central Portal.
 * Microservices: add the dependency once in the parent POM. Spring Cloud infrastructure apps (Config Server, Eureka,
   Gateway, Spring Boot Admin) are detected and skip the source-code modules (`securetest.role`).
 * **All services** page: shown automatically in a microservice system and never in a monolith. Services are found
@@ -31,6 +25,16 @@ All notable changes are documented here. The project follows [Semantic Versionin
 * Vulnerability disclosure program (opt-in): security.txt, a public report form and a triage queue.
 * Agency workspace: clients and per-client tokens in the All services view, and a portfolio report.
 * Release readiness: live checks, waivers, checklist, role-based sign-off and a release report.
+* Fix: a retest scan that finished very quickly could leave its finding "retest pending" forever.
+
+## [1.0.1] - 2026-11-10
+
+* Spring Boot 4.0 and 4.1 support. 1.0.0 failed to start on Boot 4 (a Boot class it used moved package) and rejected
+  some dashboard requests under Jackson 3.
+* WebFlux apps on Spring Boot 3.0 and 3.1 now start.
+* Tested on every build against a fresh app on each Spring Boot line from 3.0 to 4.1, with Spring MVC and WebFlux, both
+  with Spring Security (`compatibility/`).
+* Releases: every merge into `master` uploads the current version to the Central Portal.
 
 ## [1.0.0] - 2026-11-10
 

@@ -9,7 +9,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 /**
  * SecureTest AI enterprise control plane (SRS deployment profile "Enterprise Control Plane").
  * <p>
- * Run with {@code java -jar securetest-control-plane-1.0.1-exec.jar}; see the README for the required
+ * Run with {@code java -jar securetest-control-plane-1.0.2-exec.jar}; see the README for the required
  * PostgreSQL and OIDC settings. Built-in defaults live in {@code securetest/controlplane/defaults.properties}.
  */
 @SpringBootApplication

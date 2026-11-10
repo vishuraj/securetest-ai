@@ -39,7 +39,7 @@ public class WorkerProperties {
         /** Container engine CLI. */
         private String engine = "docker";
         /** Image that contains this worker jar; it is started with the {@code sandbox} argument. */
-        private String image = "securetest/worker:1.0.1";
+        private String image = "securetest/worker:1.0.2";
         /** Container network; must reach the targets and nothing else (use a dedicated egress-filtered network). */
         private String network = "bridge";
         private String memory = "1g";
