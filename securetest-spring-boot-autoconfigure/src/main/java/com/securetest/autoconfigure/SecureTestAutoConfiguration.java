@@ -91,7 +91,7 @@ import java.util.Map;
 @Conditional(DashboardEnabledCondition.class)
 @EnableConfigurationProperties(SecureTestProperties.class)
 @Import({CoreApiController.class, ScanApiController.class, FindingApiController.class, GovernanceApiController.class,
-        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
+        WorkspaceApiController.class, com.securetest.autoconfigure.web.FleetApiController.class, com.securetest.autoconfigure.web.FindingWorkflowController.class, ServletWebConfiguration.class, ReactiveWebConfiguration.class, SecureTestAutoConfiguration.Scanners.class,
         SecureTestAutoConfiguration.ActuatorBridge.class, SecureTestAutoConfiguration.MicrometerBridge.class,
         SecureTestAutoConfiguration.MailBridgeConfig.class, SecureTestAutoConfiguration.SpringCloudDiscovery.class})
 public class SecureTestAutoConfiguration {
@@ -149,6 +149,11 @@ public class SecureTestAutoConfiguration {
         return new com.securetest.autoconfigure.fleet.FleetService(props, app, role, status, telemetry, findings, secrets, env,
                 discovery.orderedStream().toList(),
                 name -> org.springframework.util.ClassUtils.isPresent(name, SecureTestAutoConfiguration.class.getClassLoader()));
+    }
+
+    @Bean
+    com.securetest.autoconfigure.service.IssueTrackerService secureTestIssueTrackers(SecureTestProperties props, SecretResolver secrets, AppContext app) {
+        return new com.securetest.autoconfigure.service.IssueTrackerService(props, secrets, app);
     }
 
     @Bean
@@ -258,8 +263,8 @@ public class SecureTestAutoConfiguration {
 
     @Bean(destroyMethod = "shutdown")
     Housekeeping secureTestHousekeeping(SecureTestProperties props, FindingService findings, JobService jobs, ReportService reports,
-                                        AuditService audit, ScheduleService schedules) {
-        return new Housekeeping(props, findings, jobs, reports, audit, schedules);
+                                        AuditService audit, ScheduleService schedules, LocalStore store) {
+        return new Housekeeping(props, findings, jobs, reports, audit, schedules, store);
     }
 
     // ------------------------------------------------------------------ web

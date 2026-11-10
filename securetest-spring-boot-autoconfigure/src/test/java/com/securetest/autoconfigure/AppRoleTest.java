@@ -39,7 +39,7 @@ class AppRoleTest {
         assertThat(modules.source("migration")).contains("Eureka");
         assertThatThrownBy(() -> modules.set("testing", true, Map.of(), "alice")).isInstanceOf(ApiException.class);
 
-        assertThat(modules.isEnabled("health")).isTrue();
+        assertThat(modules.isEnabled("health")).isFalse(); // every module is off by default
         modules.set("metrics", true, Map.of(), "alice");
         assertThat(modules.isEnabled("metrics")).isTrue();
     }

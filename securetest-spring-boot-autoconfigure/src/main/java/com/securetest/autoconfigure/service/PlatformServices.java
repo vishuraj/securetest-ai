@@ -179,8 +179,24 @@ public final class PlatformServices {
             return t;
         });
 
+        private final java.util.concurrent.atomic.AtomicBoolean started = new java.util.concurrent.atomic.AtomicBoolean();
+
+        /**
+         * Retention and schedule ticks. Nothing runs (no thread exists) until SecureTest is actually used: a scan, a schedule,
+         * a finding or a setting change, or data left by an earlier run.
+         */
         public Housekeeping(SecureTestProperties props, FindingService findings, JobService jobs, ReportService reports, AuditService audit,
-                            WorkspaceServices.ScheduleService schedules) {
+                            WorkspaceServices.ScheduleService schedules, com.securetest.autoconfigure.support.LocalStore store) {
+            Runnable start = () -> {
+                if (started.compareAndSet(false, true)) start(props, findings, jobs, reports, audit, schedules);
+            };
+            if (store.hasStoredData() || !schedules.list().isEmpty()) start.run(); else store.onFirstActivity(start);
+        }
+
+        public boolean started() { return started.get(); }
+
+        private void start(SecureTestProperties props, FindingService findings, JobService jobs, ReportService reports, AuditService audit,
+                           WorkspaceServices.ScheduleService schedules) {
             var r = props.getData().getRetention();
             exec.scheduleWithFixedDelay(schedules::tick, 30, 30, TimeUnit.SECONDS);
             exec.scheduleWithFixedDelay(() -> {

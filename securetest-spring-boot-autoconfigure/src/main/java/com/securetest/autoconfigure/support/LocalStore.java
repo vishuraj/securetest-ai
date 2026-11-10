@@ -10,6 +10,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -32,6 +33,9 @@ public class LocalStore {
     private final Map<String, Supplier<Object>> sources = new ConcurrentHashMap<>();
     private final Map<String, Boolean> dirty = new ConcurrentHashMap<>();
     private final ScheduledExecutorService writer;
+    private final java.util.concurrent.atomic.AtomicBoolean flushScheduled = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicBoolean active = new java.util.concurrent.atomic.AtomicBoolean();
+    private final List<Runnable> firstActivity = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     public LocalStore(Path dir, boolean persist, ObjectMapper mapper) {
         this.dir = dir;
@@ -48,7 +52,7 @@ public class LocalStore {
             } catch (IOException e) {
                 log.warn("SecureTest: cannot create storage directory {}: {}", dir, e.getMessage());
             }
-            writer.scheduleWithFixedDelay(this::flush, 2, 2, TimeUnit.SECONDS);
+            // no periodic task: a write is scheduled only after something changed (see markDirty)
         }
     }
 
@@ -94,7 +98,31 @@ public class LocalStore {
     }
 
     public void markDirty(String name) {
-        if (persist) dirty.put(name, Boolean.TRUE);
+        if (active.compareAndSet(false, true)) firstActivity.forEach(Runnable::run);
+        if (!persist) return;
+        dirty.put(name, Boolean.TRUE);
+        if (flushScheduled.compareAndSet(false, true)) {
+            writer.schedule(() -> {
+                flushScheduled.set(false);
+                flush();
+            }, 2, TimeUnit.SECONDS);
+        }
+    }
+
+    /** Runs once, the first time anything is changed (or now, if something already was). Lets background work start lazily. */
+    public void onFirstActivity(Runnable r) {
+        if (active.get()) r.run(); else firstActivity.add(r);
+        if (active.get() && firstActivity.remove(r)) r.run();
+    }
+
+    /** True when an earlier run left data on disk (findings, jobs, schedules...). */
+    public boolean hasStoredData() {
+        if (!persist || !Files.isDirectory(dir)) return false;
+        try (var s = Files.list(dir)) {
+            return s.anyMatch(p -> p.getFileName().toString().endsWith(".json"));
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     public synchronized void flush() {

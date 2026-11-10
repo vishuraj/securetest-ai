@@ -3,7 +3,10 @@ package com.securetest.core.model;
 import java.util.List;
 import java.util.Optional;
 
-/** The feature modules shown in the navigation (SRS 5.2). Every module is independently toggleable. */
+/**
+ * The feature modules shown in the navigation (SRS 5.2). Every module is independently toggleable and every module is OFF by
+ * default, so adding the dependency costs nothing at runtime until a tester, developer or manager switches one on.
+ */
 public final class ModuleCatalog {
 
     public record ModuleInfo(String id, String name, String summary, boolean defaultEnabled, String help) { }
@@ -22,7 +25,7 @@ public final class ModuleCatalog {
     public static final String MIGRATION = "migration";
 
     public static final List<ModuleInfo> MODULES = List.of(
-            new ModuleInfo(HEALTH, "Health", "Application health and baseline JVM snapshot.", true,
+            new ModuleInfo(HEALTH, "Health", "Application health and baseline JVM snapshot.", false,
                     "Reads health indicators and JVM MXBeans on demand. No background polling."),
             new ModuleInfo(METRICS, "Runtime Metrics", "Sampled CPU, memory, GC, thread and HTTP metrics with history and thresholds.", false,
                     "When enabled, a low-frequency sampler records metric history and HTTP request timings."),

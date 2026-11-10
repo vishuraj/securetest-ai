@@ -75,6 +75,17 @@ public class Finding {
     public List<String> relatedFindingIds = new ArrayList<>();
     public List<HistoryEntry> history = new ArrayList<>();
 
+    // ------------------------------------------------------------------ collaboration (manual findings, retest, issues)
+    /** Pentest engagement the finding belongs to (manual / VAPT findings). */
+    public String engagementId;
+    public String stepsToReproduce;
+    /** Latest retest: proves a fix (VERIFIED_FIXED) or shows the issue is still there. */
+    public Verification verification;
+    public List<Comment> comments = new ArrayList<>();
+    public List<Attachment> attachments = new ArrayList<>();
+    /** Linked issues by tracker ("jira", "github"). */
+    public Map<String, IssueLink> issues = new LinkedHashMap<>();
+
     public Finding() { }
 
     // ------------------------------------------------------------------ fluent helpers for scanners
@@ -124,6 +135,43 @@ public class Finding {
     }
 
     // ------------------------------------------------------------------ nested value types
+
+    public static class Verification {
+        /** PENDING (scan running), AWAITING_TESTER (manual), VERIFIED_FIXED, STILL_PRESENT, INCONCLUSIVE. */
+        public String state;
+        public String requestedBy;
+        public Instant requestedAt;
+        public String jobId;
+        public String verifiedBy;
+        public Instant completedAt;
+        public String note;
+    }
+
+    public static class Comment {
+        public String id;
+        public String author;
+        public Instant at;
+        public String text;
+    }
+
+    public static class Attachment {
+        public String id;
+        public String name;
+        public String contentType;
+        public long size;
+        public String sha256;
+        public String uploadedBy;
+        public Instant uploadedAt;
+    }
+
+    public static class IssueLink {
+        public String tracker;
+        public String key;
+        public String url;
+        public String state;
+        public Instant createdAt;
+        public Instant checkedAt;
+    }
 
     public static class CodeLine {
         public int number;

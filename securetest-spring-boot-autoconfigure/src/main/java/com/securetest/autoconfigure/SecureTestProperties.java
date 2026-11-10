@@ -40,6 +40,65 @@ public class SecureTestProperties {
      */
     private String role = "auto";
     private Fleet fleet = new Fleet();
+    private Integrations integrations = new Integrations();
+
+    /** Issue trackers. Each is used only when configured, and only when a user creates or refreshes an issue (no polling). */
+    public static class Integrations {
+        private Jira jira = new Jira();
+        private GitHub github = new GitHub();
+
+        public Jira getJira() { return jira; }
+        public void setJira(Jira jira) { this.jira = jira; }
+        public GitHub getGithub() { return github; }
+        public void setGithub(GitHub github) { this.github = github; }
+    }
+
+    public static class Jira {
+        /** e.g. https://acme.atlassian.net (Jira Cloud) or https://jira.acme.com (Data Center). Empty = not configured. */
+        private String url;
+        private String projectKey;
+        /** Jira Cloud: account e-mail for API-token sign-in. Leave empty for a Data Center personal access token (Bearer). */
+        private String email;
+        private String tokenRef = "env://SECURETEST_JIRA_TOKEN";
+        private String issueType = "Bug";
+        /** 3 = Jira Cloud (rich-text description), 2 = Jira Data Center / Server. */
+        private int apiVersion = 3;
+        private List<String> labels = new ArrayList<>(List.of("securetest"));
+
+        public boolean configured() { return url != null && !url.isBlank() && projectKey != null && !projectKey.isBlank(); }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+        public String getProjectKey() { return projectKey; }
+        public void setProjectKey(String projectKey) { this.projectKey = projectKey; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+        public String getIssueType() { return issueType; }
+        public void setIssueType(String issueType) { this.issueType = issueType; }
+        public int getApiVersion() { return apiVersion; }
+        public void setApiVersion(int apiVersion) { this.apiVersion = apiVersion; }
+        public List<String> getLabels() { return labels; }
+        public void setLabels(List<String> labels) { this.labels = labels; }
+    }
+
+    public static class GitHub {
+        /** owner/name. Empty = not configured. */
+        private String repository;
+        private String apiUrl = "https://api.github.com";
+        private String tokenRef = "env://SECURETEST_GITHUB_TOKEN";
+        private List<String> labels = new ArrayList<>(List.of("security", "securetest"));
+
+        public boolean configured() { return repository != null && repository.matches("[\\w.-]+/[\\w.-]+"); }
+        public String getRepository() { return repository; }
+        public void setRepository(String repository) { this.repository = repository; }
+        public String getApiUrl() { return apiUrl; }
+        public void setApiUrl(String apiUrl) { this.apiUrl = apiUrl; }
+        public String getTokenRef() { return tokenRef; }
+        public void setTokenRef(String tokenRef) { this.tokenRef = tokenRef; }
+        public List<String> getLabels() { return labels; }
+        public void setLabels(List<String> labels) { this.labels = labels; }
+    }
 
     /** The "All services" view for microservice systems. */
     public static class Fleet {
@@ -531,6 +590,8 @@ public class SecureTestProperties {
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
     public Fleet getFleet() { return fleet; }
+    public Integrations getIntegrations() { return integrations; }
+    public void setIntegrations(Integrations integrations) { this.integrations = integrations; }
     public void setFleet(Fleet fleet) { this.fleet = fleet; }
 
     public Module module(String id) {

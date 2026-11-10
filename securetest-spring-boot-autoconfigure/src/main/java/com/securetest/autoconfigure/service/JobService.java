@@ -396,6 +396,7 @@ public class JobService {
             job.appendLog("Finished with status " + job.status + (job.error != null ? " — " + job.error : ""));
             contexts.remove(job.id);
             futures.remove(job.id);
+            if (job.status != JobStatus.COMPLETED) findings.jobEnded(job);
             audit.record(job.requestedBy, null, "scan.finished", job.id, job.status.name(),
                     Map.of("scanner", job.scannerId, "findings", String.valueOf(job.findingsCount)));
             if (job.status == JobStatus.FAILED) notifications.publish("scan.failed", job.scannerName + " failed: " + job.error, Map.of("jobId", job.id));
